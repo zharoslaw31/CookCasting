@@ -29,6 +29,9 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - name: Build web app
+        env:
+          # безкоштовний ключ світової бази рецептів (Settings → Secrets → Actions); без нього працює лише вбудована база
+          EXPO_PUBLIC_SPOONACULAR_KEY: ${{ secrets.SPOONACULAR_API_KEY }}
         run: npx expo export --platform web --output-dir dist
       - name: SPA fallback for deep links
         run: cp dist/index.html dist/404.html && touch dist/.nojekyll

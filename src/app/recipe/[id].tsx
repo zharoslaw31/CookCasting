@@ -9,7 +9,8 @@ import { Fact, Heading, RecipeRow } from '../../components/RecipeParts';
 import { TrailerPlayer } from '../../components/TrailerPlayer';
 import { GhostButton, GradientButton, Stars, Toast } from '../../components/ui';
 import { goBack } from '../../lib/nav';
-import { areaLabel, areaOf, catOf, DIFFICULTY_LABEL, difficulty, FLAGS, formatTime, getRecipe, ingredientImage, plural, similar } from '../../lib/recipes';
+import { areaLabel, areaOf, catOf, DIFFICULTY_LABEL, difficulty, FLAGS, formatTime, getRecipe, ingredientImage, isWorld, plural, similar } from '../../lib/recipes';
+import { loadWorldRecipe } from '../../lib/spoon';
 import { shareRecipe, shareRecipeText } from '../../lib/share';
 import { useHaptics, useStore } from '../../lib/store';
 import { colors, gradients, radius } from '../../theme';
@@ -17,10 +18,12 @@ import { colors, gradients, radius } from '../../theme';
 export default function RecipeScreen() {
   const { id: rawId } = useLocalSearchParams<{ id: string }>();
   const id = Number(rawId);
+  const [, setLoaded] = useState(0);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const r = getRecipe(id);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { isLiked, isCooked, isDisliked, ratingOf, dispatch } = useStore();
+  const { isLiked, isCooked, isDisliked, ratingOf, dispatch, worldKey } = useStore();
   const haptic = useHaptics();
   const [playing, setPlaying] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -39,6 +42,20 @@ export default function RecipeScreen() {
     scroll.current?.scrollTo({ y: 0, animated: false });
   }, [id]);
 
+  // рецепт світової бази, якого ще немає на пристрої (напр., відкрили посилання) — завантажуємо й перекладаємо
+  const needsLoad = !r && isWorld(id) && !!worldKey;
+  useEffect(() => {
+    if (!needsLoad) return;
+    let alive = true;
+    setLoadErr(null);
+    loadWorldRecipe(worldKey, id)
+      .then(() => alive && setLoaded((n) => n + 1))
+      .catch((e) => alive && setLoadErr(e?.message ?? 'Не вдалося завантажити рецепт'));
+    return () => {
+      alive = false;
+    };
+  }, [needsLoad, id, worldKey]);
+
   const flash = (t: string) => {
     setToast(t);
     setTimeout(() => setToast(null), 2200);
@@ -48,7 +65,7 @@ export default function RecipeScreen() {
     return (
       <View style={[styles.screen, styles.center]}>
         <Text style={styles.emptyEmoji}>🍽️</Text>
-        <Text style={styles.muted}>Рецепт не знайдено</Text>
+        <Text style={styles.muted}>{needsLoad && !loadErr ? 'Завантажуємо й перекладаємо рецепт…' : loadErr ?? 'Рецепт не знайдено'}</Text>
         <GhostButton title="Назад" icon="chevron-back" onPress={goBack} style={{ marginTop: 16 }} />
       </View>
     );

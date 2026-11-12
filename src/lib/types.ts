@@ -86,4 +86,8 @@ export type Settings = {
   castingMode?: 'all' | 'foryou';
   /** продукти «у холодильнику» (англійські назви інгредієнтів) */
   pantry?: string[];
+  /** власний ключ Spoonacular (світова база рецептів) */
+  spoonKey?: string;
+  /** показувати рецепти світової бази в Кастингу */
+  world?: boolean;
 };

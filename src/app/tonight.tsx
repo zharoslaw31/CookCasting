@@ -6,7 +6,7 @@ import { Pressable, ScrollView, ScrollViewInstance, StyleSheet, Text, useWindowD
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GhostButton, GradientButton } from '../components/ui';
 import { goBack, openRecipe } from '../lib/nav';
-import { areaOf, buildTaste, catOf, DIFFICULTY_LABEL, difficulty, formatTime, RECIPES, REGIONS, shuffle, tasteScore } from '../lib/recipes';
+import { areaOf, buildTaste, catOf, DIFFICULTY_LABEL, difficulty, formatTime, allRecipes, REGIONS, shuffle, tasteScore } from '../lib/recipes';
 import { useHaptics, useStore } from '../lib/store';
 import { Flag, Recipe } from '../lib/types';
 import { colors, gradients, radius } from '../theme';
@@ -77,7 +77,7 @@ export default function TonightScreen() {
     setError(null);
     setChosen(null);
     haptic('light');
-    const all = RECIPES.filter((r) => fits(r) && !isDisliked(r.id));
+    const all = allRecipes().filter((r) => fits(r) && !isDisliked(r.id));
     const fromLiked: Pick[] = shuffle(all.filter((r) => isLiked(r.id)))
       .slice(0, 6)
       .map((r) => ({ r, reason: '❤️ З вашого Обраного' }));

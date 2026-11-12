@@ -3,6 +3,7 @@ import * as H from 'expo-haptics';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import { Platform } from 'react-native';
 import { getRecipe } from './recipes';
+import { ENV_SPOON_KEY, loadWorld, saveWorld } from './spoon';
 import { DEFAULT_FILTERS, Filters, LibraryEntry, Profile, Settings, ShopItem, SwipeKind } from './types';
 
 const STORAGE_KEY = 'cookcasting/state/v1';
@@ -150,6 +151,8 @@ type Ctx = {
   isDisliked: (id: number) => boolean;
   ratingOf: (id: number) => number | undefined;
   swipe: (id: number, kind: SwipeKind) => void;
+  /** ключ світової бази (Spoonacular): з Профілю або вбудований у сайт */
+  worldKey: string;
 };
 
 const StoreContext = createContext<Ctx | null>(null);
@@ -159,7 +162,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY)
+    // спершу — збережені рецепти світової бази, щоб бібліотека їх «бачила»
+    loadWorld()
+      .then(() => AsyncStorage.getItem(STORAGE_KEY))
       .then((raw) => dispatch({ type: 'hydrate', state: raw ? JSON.parse(raw) : {} }))
       .catch(() => dispatch({ type: 'hydrate', state: {} }));
   }, []);
@@ -172,6 +177,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(persist)).catch(() => {});
     }, 400);
   }, [state]);
+
+  // рецепти світової бази з бібліотеки й списку покупок зберігаємо назавжди, решту — останні кілька сотень
+  useEffect(() => {
+    if (!state.ready) return;
+    saveWorld(new Set([...state.liked, ...state.cooked, ...state.disliked].map((e) => e.id).concat(state.shopping.map((x) => x.recipeId ?? 0))));
+  }, [state.ready, state.liked, state.cooked, state.disliked, state.shopping]);
 
   const value = useMemo<Ctx>(() => {
     const likedIds = new Set(state.liked.map((e) => e.id));
@@ -187,6 +198,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       isDisliked: (id) => dislikedIds.has(id),
       ratingOf: (id) => ratings.get(id),
       swipe: (id, kind) => dispatch({ type: 'swipe', id, kind }),
+      worldKey: state.settings.spoonKey || ENV_SPOON_KEY,
     };
   }, [state]);
 

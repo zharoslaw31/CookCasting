@@ -6,12 +6,36 @@ export const DB = raw as unknown as RecipeDb;
 export const RECIPES: Recipe[] = DB.recipes;
 const BY_ID = new Map(RECIPES.map((r) => [r.id, r]));
 
-export const getRecipe = (id: number) => BY_ID.get(id);
+/** Рецепти зі світової бази (Spoonacular), перекладені на пристрої. Див. extra.ts */
+export const EXTRA = new Map<number, Recipe>();
+export const getRecipe = (id: number) => BY_ID.get(id) ?? EXTRA.get(id);
+/** id рецептів Spoonacular зсунуті, щоб не перетинатися з TheMealDB */
+export const SPOON_OFFSET = 10_000_000;
+export const isWorld = (id: number) => id >= SPOON_OFFSET;
+/** Вбудовані + завантажені зі світової бази */
+export const allRecipes = (): Recipe[] => (EXTRA.size ? [...RECIPES, ...EXTRA.values()] : RECIPES);
 
-const AREA_MAP = new Map(DB.areas.map((a) => [a.id, a]));
+/** Кухні, які є у світовій базі, але немає в TheMealDB */
+const WORLD_AREAS: Area[] = [
+  { id: 'African', uk: 'Африканська', flag: '🌍', count: 0 },
+  { id: 'Asian', uk: 'Азійська', flag: '🌏', count: 0 },
+  { id: 'Cajun', uk: 'Каджунська', flag: '🇺🇸', count: 0 },
+  { id: 'Caribbean', uk: 'Карибська', flag: '🏝️', count: 0 },
+  { id: 'Eastern European', uk: 'Східноєвропейська', flag: '🇪🇺', count: 0 },
+  { id: 'European', uk: 'Європейська', flag: '🇪🇺', count: 0 },
+  { id: 'Jewish', uk: 'Єврейська', flag: '🇮🇱', count: 0 },
+  { id: 'Latin American', uk: 'Латиноамериканська', flag: '🌎', count: 0 },
+  { id: 'Mediterranean', uk: 'Середземноморська', flag: '🫒', count: 0 },
+  { id: 'Middle Eastern', uk: 'Близькосхідна', flag: '🧆', count: 0 },
+  { id: 'Nordic', uk: 'Скандинавська', flag: '🇸🇪', count: 0 },
+  { id: 'Southern', uk: 'Кухня півдня США', flag: '🇺🇸', count: 0 },
+  { id: 'German', uk: 'Німецька', flag: '🇩🇪', count: 0 },
+  { id: 'Korean', uk: 'Корейська', flag: '🇰🇷', count: 0 },
+];
+const AREA_MAP = new Map([...WORLD_AREAS, ...DB.areas].map((a) => [a.id, a]));
 const CAT_MAP = new Map(DB.cats.map((c) => [c.id, c]));
 
-export const AREAS: Area[] = DB.areas;
+export const AREAS: Area[] = [...DB.areas, ...WORLD_AREAS.filter((w) => !DB.areas.some((a) => a.id === w.id))];
 export const CATEGORIES: Category[] = DB.cats;
 export const areaOf = (id: string): Area => AREA_MAP.get(id) ?? { id, uk: id, flag: '🌍', count: 0 };
 export const catOf = (id: string): Category => CAT_MAP.get(id) ?? { id, uk: id, emoji: '🍽️', count: 0 };
@@ -20,10 +44,10 @@ export const areaLabel = (id: string) => (id === 'Unknown' ? 'Інтернаці
 
 /** Регіони — для швидкого вибору в «Що приготувати?» */
 export const REGIONS: { id: string; label: string; icon: string; areas: string[] }[] = [
-  { id: 'europe', label: 'Європа', icon: '🇪🇺', areas: ['British', 'Irish', 'French', 'Italian', 'Spanish', 'Portuguese', 'Greek', 'Dutch', 'Belgian', 'German', 'Polish', 'Croatian', 'Slovakian', 'Ukrainian', 'Russian', 'Norwegian', 'Swedish'] },
-  { id: 'asia', label: 'Азія', icon: '🥢', areas: ['Chinese', 'Japanese', 'Thai', 'Vietnamese', 'Malaysian', 'Filipino', 'Indian', 'Korean', 'Indonesian'] },
-  { id: 'east', label: 'Близький Схід і Африка', icon: '🧆', areas: ['Turkish', 'Egyptian', 'Moroccan', 'Tunisian', 'Algerian', 'Kenyan', 'Syrian', 'Lebanese', 'Saudi Arabian'] },
-  { id: 'americas', label: 'Америка', icon: '🌮', areas: ['American', 'Canadian', 'Mexican', 'Jamaican', 'Argentinian', 'Uruguayan', 'Venezulan', 'Venezuelan', 'Brazilian', 'Peruvian', 'Colombian', 'Cuban'] },
+  { id: 'europe', label: 'Європа', icon: '🇪🇺', areas: ['European', 'Eastern European', 'Mediterranean', 'Nordic', 'British', 'Irish', 'French', 'Italian', 'Spanish', 'Portuguese', 'Greek', 'Dutch', 'Belgian', 'German', 'Polish', 'Croatian', 'Slovakian', 'Ukrainian', 'Russian', 'Norwegian', 'Swedish'] },
+  { id: 'asia', label: 'Азія', icon: '🥢', areas: ['Asian', 'Chinese', 'Japanese', 'Thai', 'Vietnamese', 'Malaysian', 'Filipino', 'Indian', 'Korean', 'Indonesian'] },
+  { id: 'east', label: 'Близький Схід і Африка', icon: '🧆', areas: ['African', 'Middle Eastern', 'Jewish', 'Turkish', 'Egyptian', 'Moroccan', 'Tunisian', 'Algerian', 'Kenyan', 'Syrian', 'Lebanese', 'Saudi Arabian'] },
+  { id: 'americas', label: 'Америка', icon: '🌮', areas: ['Latin American', 'Caribbean', 'Cajun', 'Southern', 'American', 'Canadian', 'Mexican', 'Jamaican', 'Argentinian', 'Uruguayan', 'Venezulan', 'Venezuelan', 'Brazilian', 'Peruvian', 'Colombian', 'Cuban'] },
 ];
 
 export const FLAGS: { id: Flag; label: string; icon: string }[] = [
@@ -154,16 +178,18 @@ const norm = (s: string) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-const INDEX = RECIPES.map((r) => ({
+const indexOf = (r: Recipe) => ({
   r,
   name: norm(`${r.name} ${r.nameEn}`),
   rest: norm(`${areaOf(r.area).uk} ${catOf(r.cat).uk} ${r.tags.join(' ')} ${r.ingr.map((i) => `${i.n} ${i.en}`).join(' ')}`),
-}));
+});
+const INDEX = RECIPES.map(indexOf);
 
+/** Пошук у вбудованій базі та в уже завантажених рецептах світової бази. */
 export function search(q: string): Recipe[] {
   const words = norm(q).split(' ').filter(Boolean);
   if (!words.length) return [];
-  return INDEX.map(({ r, name, rest }) => {
+  return [...INDEX, ...[...EXTRA.values()].map(indexOf)].map(({ r, name, rest }) => {
     let score = 0;
     for (const w of words) {
       if (name.includes(w)) score += name.startsWith(w) ? 4 : 3;
@@ -209,7 +235,7 @@ export function byPantry(pantry: string[], f?: Filters) {
   if (!have.size) return [];
   // «chicken» вдома покриває «chicken breast», «chicken thighs» тощо
   const covers = (k: string) => have.has(k) || [...have].some((h) => k.includes(h) && h.length >= 4);
-  return RECIPES.filter((r) => !f || matches(r, f))
+  return allRecipes().filter((r) => !f || matches(r, f))
     .map((r) => {
       const needed = r.ingr.filter((i) => !BASIC.has(i.en.toLowerCase()));
       const got = needed.filter((i) => covers(i.en.toLowerCase()));
@@ -225,7 +251,7 @@ export const ingredientImage = (en: string) => `https://www.themealdb.com/images
 /** Схожі рецепти: та сама кухня/категорія + спільні інгредієнти. */
 export function similar(r: Recipe, n = 10): Recipe[] {
   const mine = new Set(r.ingr.map((i) => i.en.toLowerCase()).filter((k) => !BASIC.has(k)));
-  return RECIPES.filter((x) => x.id !== r.id)
+  return allRecipes().filter((x) => x.id !== r.id)
     .map((x) => {
       let s = (x.area === r.area ? 2 : 0) + (x.cat === r.cat ? 2.5 : 0);
       x.ingr.forEach((i) => mine.has(i.en.toLowerCase()) && (s += 0.6));

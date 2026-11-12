@@ -18,7 +18,9 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AREAS, CATEGORIES, INGREDIENTS, TAGS, fixText } from './glossary.mjs';
+import { AREAS, AREA_ALIASES, CATEGORIES, INGREDIENTS, NAMES, TAGS, fixName, fixText } from './glossary.mjs';
+
+const baseName = (n) => n.replace(/\s*\bRecipe\b\s*/i, ' ').replace(/\s+/g, ' ').trim();
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'src/data/recipes.json');
@@ -364,7 +366,7 @@ async function main() {
       id: +m.idMeal,
       nameEn: clean(m.strMeal),
       cat: clean(m.strCategory) || 'Miscellaneous',
-      area: clean(m.strArea) || 'Unknown',
+      area: AREA_ALIASES[clean(m.strArea)] ?? (clean(m.strArea) || 'Unknown'),
       img: clean(m.strMealThumb),
       video: (clean(m.strYoutube).match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([\w-]{11})/) ?? [])[1] ?? null,
       tags: clean(m.strTags)
@@ -386,7 +388,7 @@ async function main() {
   const areas = [...new Set(parsed.map((r) => r.area))].filter((a) => !AREAS[a]);
   const cats = [...new Set(parsed.map((r) => r.cat))].filter((c) => !CATEGORIES[c]);
 
-  const tName = await translateAll(parsed.map((r) => r.nameEn), 'Назви');
+  const tName = await translateAll(parsed.map((r) => baseName(r.nameEn)).filter((n) => !NAMES[n]), 'Назви');
   const tIng = await translateAll(ingNames, 'Інгредієнти');
   const tMeasure = await translateAll(measures, 'Міри');
   const tTag = await translateAll(tags, 'Теги');
@@ -428,7 +430,7 @@ async function main() {
     const minutes = estimateMinutes(r);
     return {
       id: r.id,
-      name: capFirst(fixText(need(tName(r.nameEn)))),
+      name: NAMES[baseName(r.nameEn)] ?? capFirst(fixName(fixText(need(tName(baseName(r.nameEn)))))),
       nameEn: r.nameEn,
       cat: r.cat,
       area: r.area,

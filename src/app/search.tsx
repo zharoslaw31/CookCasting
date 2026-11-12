@@ -1,12 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { FlatList, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RecipeListItem } from '../components/RecipeParts';
 import { Chip } from '../components/ui';
 import { goBack } from '../lib/nav';
 import { plural, RECIPES, search } from '../lib/recipes';
+import { searchWorld } from '../lib/spoon';
+import { toEnglish } from '../lib/translate';
+import { Recipe } from '../lib/types';
 import { useHaptics, useStore } from '../lib/store';
 import { colors, radius } from '../theme';
 
@@ -15,7 +18,7 @@ const IDEAS = ['курка', 'паста', 'борщ', 'шоколад', 'суп
 /** Пошук рецепту за назвою (українською чи англійською), інгредієнтом, кухнею. */
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
-  const { dispatch, isLiked } = useStore();
+  const { dispatch, isLiked, worldKey } = useStore();
   const haptic = useHaptics();
   const params = useLocalSearchParams<{ q?: string }>();
   const [q, setQ] = useState(typeof params.q === 'string' ? params.q : '');
@@ -24,7 +27,50 @@ export default function SearchScreen() {
     const t = setTimeout(() => setDebounced(q), 200);
     return () => clearTimeout(t);
   }, [q]);
-  const items = useMemo(() => (debounced.trim().length >= 2 ? search(debounced) : []), [debounced]);
+  const local = useMemo(() => (debounced.trim().length >= 2 ? search(debounced) : []), [debounced]);
+  // світова база: запит перекладаємо англійською, результати — українською
+  const [world, setWorld] = useState<{ q: string; items: Recipe[] } | null>(null);
+  const [worldBusy, setWorldBusy] = useState(false);
+  const [worldErr, setWorldErr] = useState<string | null>(null);
+  const searchWorldNow = async () => {
+    const query = debounced.trim();
+    if (!worldKey || query.length < 2 || worldBusy) return;
+    Keyboard.dismiss();
+    setWorldBusy(true);
+    setWorldErr(null);
+    try {
+      const found = await searchWorld(worldKey, await toEnglish(query), 20);
+      setWorld({ q: query, items: found });
+    } catch (e: any) {
+      setWorldErr(e?.message ?? 'Світова база недоступна');
+    } finally {
+      setWorldBusy(false);
+    }
+  };
+  const items = useMemo(() => {
+    if (!world || world.q !== debounced.trim()) return local;
+    const ids = new Set(local.map((r) => r.id));
+    return [...local, ...world.items.filter((r) => !ids.has(r.id))];
+  }, [local, world, debounced]);
+  const worldShown = !!world && world.q === debounced.trim();
+  const worldFooter =
+    worldKey && debounced.trim().length >= 2 ? (
+      <View style={styles.worldBox}>
+        {worldBusy ? (
+          <View style={styles.worldRow}>
+            <ActivityIndicator color={colors.accent} />
+            <Text style={styles.worldText}>Шукаємо у світовій базі й перекладаємо…</Text>
+          </View>
+        ) : worldShown ? (
+          <Text style={styles.worldText}>{world!.items.length ? `🌍 Зі світової бази: ${world!.items.length}` : '🌍 У світовій базі теж нічого не знайшлося'}</Text>
+        ) : (
+          <Pressable onPress={searchWorldNow} style={styles.worldBtn}>
+            <Text style={styles.worldBtnText}>🌍 Шукати у світовій базі (360 000+ рецептів)</Text>
+          </Pressable>
+        )}
+        {worldErr ? <Text style={[styles.worldText, { color: colors.nope }]}>{worldErr}</Text> : null}
+      </View>
+    ) : undefined;
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top + 8 }]}>
@@ -41,7 +87,7 @@ export default function SearchScreen() {
             placeholder="Страва, інгредієнт або кухня"
             placeholderTextColor={colors.textMuted}
             returnKeyType="search"
-            onSubmitEditing={() => Keyboard.dismiss()}
+            onSubmitEditing={() => (local.length ? Keyboard.dismiss() : searchWorldNow())}
             autoCorrect={false}
             style={styles.inputText}
           />
@@ -59,12 +105,13 @@ export default function SearchScreen() {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 30 }}
         ListHeaderComponent={items.length ? <Text style={styles.count}>{`${items.length} ${plural(items.length, ['рецепт', 'рецепти', 'рецептів'])}`}</Text> : undefined}
+        ListFooterComponent={worldFooter}
         ListEmptyComponent={
           <View style={styles.empty}>
             {debounced.trim().length >= 2 ? (
               <>
                 <Text style={styles.emptyEmoji}>🤷</Text>
-                <Text style={styles.emptyText}>Нічого не знайдено. Спробуйте інше слово — можна й англійською.</Text>
+                <Text style={styles.emptyText}>{worldKey ? 'У вбудованій базі нічого. Пошукаймо у світовій 👇' : 'Нічого не знайдено. Спробуйте інше слово — можна й англійською.'}</Text>
               </>
             ) : (
               <>
@@ -117,5 +164,10 @@ const styles = StyleSheet.create({
   emptyTitle: { color: colors.text, fontSize: 20, fontWeight: '800', marginTop: 10, textAlign: 'center' },
   emptyText: { color: colors.textDim, fontSize: 14, textAlign: 'center', marginTop: 8, lineHeight: 20 },
   ideas: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginTop: 16 },
+  worldBox: { alignItems: 'center', paddingVertical: 18, gap: 8 },
+  worldRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  worldText: { color: colors.textDim, fontSize: 14, textAlign: 'center' },
+  worldBtn: { paddingHorizontal: 18, paddingVertical: 12, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.accent, backgroundColor: colors.accent + '1A' },
+  worldBtnText: { color: colors.accent, fontSize: 14, fontWeight: '800' },
   act: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, marginLeft: 8 },
 });

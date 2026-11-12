@@ -1,20 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SwipeDeck, SwipeDeckHandle } from '../../components/SwipeDeck';
 import { GradientButton, RoundButton } from '../../components/ui';
 import { openRecipe } from '../../lib/nav';
-import { buildTaste, matches, plural, RECIPES, sortRecipes, tasteScore } from '../../lib/recipes';
+import { buildTaste, isWorld, matches, plural, RECIPES, sortRecipes, tasteScore } from '../../lib/recipes';
 import { countActiveFilters, useHaptics, useStore } from '../../lib/store';
+import { QuotaError, randomRecipes } from '../../lib/spoon';
 import { Recipe, SwipeKind } from '../../lib/types';
 import { colors, gradients, radius, TAB_BAR_HEIGHT } from '../../theme';
 
 export default function CastingScreen() {
   const insets = useSafeAreaInsets();
-  const { state, seen, swipe, dispatch } = useStore();
+  const { state, seen, swipe, dispatch, worldKey } = useStore();
   const haptic = useHaptics();
   const deck = useRef<SwipeDeckHandle>(null);
   const [queue, setQueue] = useState<Recipe[]>([]);
@@ -26,6 +27,57 @@ export default function CastingScreen() {
   const forYou = mode === 'foryou';
   const filtersKey = JSON.stringify(state.filters) + shuffleTick + mode;
   const pool = useMemo(() => RECIPES.filter((r) => matches(r, state.filters)), [state.filters]);
+
+  // ───── світова база: безкінечні рецепти з перекладом ─────
+  const worldOn = !!worldKey && state.settings.world !== false;
+  const [worldLoading, setWorldLoading] = useState(false);
+  const [worldError, setWorldError] = useState<string | null>(null);
+  const worldBusy = useRef(false);
+  const worldGen = useRef(0);
+  const queueRef = useRef(queue);
+  queueRef.current = queue;
+
+  const loadWorld = useCallback(async () => {
+    if (worldBusy.current || !worldKey) return;
+    worldBusy.current = true;
+    setWorldLoading(true);
+    const gen = worldGen.current;
+    try {
+      let added: Recipe[] = [];
+      for (let round = 0; round < 3 && added.length < 6; round++) {
+        const list = await randomRecipes(worldKey, state.filters, 20);
+        if (gen !== worldGen.current) return;
+        const have = new Set(queueRef.current.map((r) => r.id));
+        added = added.concat(list.filter((r) => matches(r, state.filters) && !seenRef.current.has(r.id) && !have.has(r.id) && !added.some((x) => x.id === r.id)));
+      }
+      setWorldError(null);
+      // вставляємо впереміш з вбудованими, не чіпаючи верхню картку
+      setQueue((q) => {
+        if (!q.length) return added;
+        const [top, ...rest] = q;
+        const out: Recipe[] = [top];
+        let i = 0;
+        let j = 0;
+        while (i < rest.length || j < added.length) {
+          if (j < added.length) out.push(added[j++]);
+          if (i < rest.length) out.push(rest[i++]);
+        }
+        return out;
+      });
+    } catch (e) {
+      if (gen === worldGen.current) setWorldError(e instanceof QuotaError || e instanceof Error ? e.message : 'Світова база недоступна');
+    } finally {
+      worldBusy.current = false;
+      setWorldLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [worldKey, filtersKey]);
+
+  // світових рецептів у колоді завжди кілька наперед
+  const worldLow = queue.filter((r) => isWorld(r.id)).length < 5;
+  useEffect(() => {
+    if (state.ready && worldOn && !worldError && worldLow) loadWorld();
+  }, [state.ready, worldOn, worldLow, worldError, loadWorld]);
 
   // Нова колода при зміні фільтрів / режиму / натисканні «Перемішати»
   useEffect(() => {
@@ -45,6 +97,9 @@ export default function CastingScreen() {
           .map((x) => x.r),
       );
     } else setQueue(sortRecipes(fresh, state.filters.sortBy));
+    worldGen.current += 1;
+    worldBusy.current = false;
+    setWorldError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtersKey, state.ready]);
 
@@ -100,7 +155,7 @@ export default function CastingScreen() {
             Cook<Text style={{ color: colors.accent }}>Casting</Text>
           </Text>
           <Text style={styles.sub} numberOfLines={1}>
-            {state.ready ? `${left} ${plural(left, ['рецепт', 'рецепти', 'рецептів'])} у колоді` : ' '}
+            {!state.ready ? ' ' : worldOn ? (worldError ? 'Світова база: ліміт на сьогодні' : '∞ Світова база + вбудовані рецепти') : `${left} ${plural(left, ['рецепт', 'рецепти', 'рецептів'])} у колоді`}
           </Text>
         </View>
         <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -131,6 +186,12 @@ export default function CastingScreen() {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.modes} contentContainerStyle={styles.modesRow}>
         <ModeChip icon="🎲" label="Уся база" active={!forYou} onPress={() => dispatch({ type: 'settings', settings: { castingMode: 'all' } })} />
         <ModeChip icon="✨" label="Для тебе" active={forYou} onPress={() => dispatch({ type: 'settings', settings: { castingMode: 'foryou' } })} />
+        <ModeChip
+          icon="🌍"
+          label="Світ ∞"
+          active={worldOn}
+          onPress={() => (worldKey ? dispatch({ type: 'settings', settings: { world: !worldOn } }) : router.push('/profile'))}
+        />
         <View style={styles.modeSep} />
         <ModeChip icon="🍳" label="Що приготувати?" onPress={() => router.push('/tonight')} />
         <ModeChip icon="🧺" label="Що є вдома" onPress={() => router.push('/fridge')} />
@@ -142,15 +203,25 @@ export default function CastingScreen() {
       <View style={{ flex: 1, marginTop: 10 }}>
         {queue.length ? (
           <SwipeDeck ref={deck} movies={queue} onSwipe={handleSwipe} onOpen={(r) => openRecipe(r.id)} />
+        ) : state.ready && worldOn && worldLoading ? (
+          <View style={styles.empty}>
+            <ActivityIndicator color={colors.accent} size="large" />
+            <Text style={[styles.emptyText, { marginTop: 14 }]}>Шукаємо нові рецепти у світовій базі й перекладаємо українською…</Text>
+          </View>
         ) : state.ready ? (
           <View style={styles.empty}>
             <Text style={styles.emptyEmoji}>🍽️</Text>
             <Text style={styles.emptyTitle}>{pool.length ? 'Ви переглянули всі рецепти' : 'Нічого не знайдено'}</Text>
             <Text style={styles.emptyText}>
-              {pool.length
-                ? 'Під ці фільтри більше нових рецептів немає. Змініть фільтри або перегляньте Обране в Бібліотеці.'
-                : 'Під ці фільтри немає жодного рецепту. Спробуйте розширити пошук.'}
+              {worldError
+                ? worldError
+                : !worldKey
+                  ? 'Вбудовані рецепти закінчились. Підключіть безкоштовну світову базу в Профілі — і рецепти не закінчаться ніколи.'
+                  : pool.length
+                    ? 'Під ці фільтри більше нових рецептів немає. Змініть фільтри або перегляньте Обране в Бібліотеці.'
+                    : 'Під ці фільтри немає жодного рецепту. Спробуйте розширити пошук.'}
             </Text>
+            {worldError ? <GradientButton title="Спробувати ще" icon="refresh" onPress={() => setWorldError(null)} style={{ marginTop: 20 }} /> : null}
             <GradientButton title="Змінити фільтри" icon="options-outline" onPress={() => router.push('/filters')} style={{ marginTop: 20 }} />
           </View>
         ) : null}

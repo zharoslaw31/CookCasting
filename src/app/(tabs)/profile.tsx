@@ -4,7 +4,8 @@ import React, { useMemo, useState } from 'react';
 import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SectionTitle } from '../../components/ui';
-import { AREAS, areaOf, catOf, DB, getRecipe, RECIPES } from '../../lib/recipes';
+import { AREAS, areaOf, catOf, DB, EXTRA, getRecipe, RECIPES } from '../../lib/recipes';
+import { ENV_SPOON_KEY, validateSpoonKey } from '../../lib/spoon';
 import { useStore } from '../../lib/store';
 import { colors, gradients, radius, TAB_BAR_HEIGHT } from '../../theme';
 
@@ -230,6 +231,8 @@ export default function ProfileScreen() {
         </Pressable>
       </View>
 
+      <WorldCard />
+
       <SectionTitle>Налаштування</SectionTitle>
       <View style={styles.card}>
         {Platform.OS !== 'web' ? <Row label="Вібровідгук" value={state.settings.haptics} onChange={(v) => dispatch({ type: 'settings', settings: { haptics: v } })} /> : null}
@@ -239,8 +242,72 @@ export default function ProfileScreen() {
           <Text style={styles.dangerText}>Очистити бібліотеку і статистику</Text>
         </Pressable>
       </View>
-      <Text style={styles.footer}>CookCasting 1.0 · Рецепти: TheMealDB (themealdb.com) · Переклад українською автоматичний, з ручними правками.</Text>
+      <Text style={styles.footer}>CookCasting 1.1 · Рецепти: TheMealDB і Spoonacular · Переклад українською автоматичний, з ручними правками.</Text>
     </ScrollView>
+  );
+}
+
+/** Світова база Spoonacular: безкінечні рецепти з автоматичним перекладом. */
+function WorldCard() {
+  const { state, dispatch, worldKey } = useStore();
+  const [key, setKey] = useState(state.settings.spoonKey ?? '');
+  const [status, setStatus] = useState<'idle' | 'checking' | 'ok' | 'bad'>('idle');
+  const on = !!worldKey && state.settings.world !== false;
+
+  const save = async () => {
+    const k = key.trim();
+    if (!k) {
+      dispatch({ type: 'settings', settings: { spoonKey: undefined } });
+      setStatus('idle');
+      return;
+    }
+    setStatus('checking');
+    const ok = await validateSpoonKey(k);
+    setStatus(ok ? 'ok' : 'bad');
+    if (ok) dispatch({ type: 'settings', settings: { spoonKey: k, world: true } });
+  };
+
+  return (
+    <>
+      <SectionTitle>Світова база ∞</SectionTitle>
+      <View style={styles.card}>
+        <View style={styles.dbHeader}>
+          <View style={[styles.dot, { backgroundColor: on ? colors.like : colors.textMuted }]} />
+          <Text style={styles.cardTitleInline}>{on ? `Увімкнено · вже перекладено ${EXTRA.size}` : worldKey ? 'Вимкнено' : 'Потрібен ключ'}</Text>
+        </View>
+        <Text style={styles.muted}>
+          Понад 360 000 рецептів Spoonacular з усього світу. Додаток підмішує їх у Кастинг, коли вбудовані закінчуються, і одразу перекладає українською. Рецепти з бібліотеки зберігаються на пристрої назавжди.
+        </Text>
+        {worldKey ? <Row label="Показувати рецепти світової бази" value={state.settings.world !== false} onChange={(v) => dispatch({ type: 'settings', settings: { world: v } })} /> : null}
+        <Text style={[styles.muted, { marginTop: 12 }]}>
+          {ENV_SPOON_KEY ? 'Ключ уже вбудовано в сайт. Можна вказати власний, якщо денний ліміт вичерпано:' : 'Безкоштовний ключ (150 запитів на день) — на spoonacular.com/food-api → Console → Profile:'}
+        </Text>
+        <View style={styles.keyRow}>
+          <TextInput
+            value={key}
+            onChangeText={(t) => {
+              setKey(t);
+              setStatus('idle');
+            }}
+            placeholder="API-ключ Spoonacular"
+            placeholderTextColor={colors.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            onSubmitEditing={save}
+            style={styles.keyInput}
+          />
+          <Pressable onPress={save} style={styles.keyBtn} disabled={status === 'checking'}>
+            <Text style={styles.keyBtnText}>{status === 'checking' ? '…' : 'Зберегти'}</Text>
+          </Pressable>
+        </View>
+        {status === 'ok' ? <Text style={[styles.muted, { color: colors.like, marginTop: 6 }]}>Ключ працює — світову базу увімкнено ✓</Text> : null}
+        {status === 'bad' ? <Text style={[styles.muted, { color: colors.nope, marginTop: 6 }]}>Ключ не підійшов. Перевірте, чи скопійовано повністю.</Text> : null}
+        <Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 10 }} onPress={() => Linking.openURL('https://spoonacular.com/food-api/console#Profile')}>
+          <Text style={styles.link}>Отримати ключ</Text>
+          <Ionicons name="open-outline" size={14} color={colors.accent} />
+        </Pressable>
+      </View>
+    </>
   );
 }
 
@@ -287,6 +354,10 @@ function levelFor(points: number) {
 }
 
 const styles = StyleSheet.create({
+  keyRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  keyInput: { flex: 1, height: 42, paddingHorizontal: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg, color: colors.text, fontSize: 14 },
+  keyBtn: { height: 42, paddingHorizontal: 14, borderRadius: radius.md, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  keyBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
   screen: { flex: 1, backgroundColor: colors.bg },
   title: { color: colors.text, fontSize: 30, fontWeight: '900', letterSpacing: -0.5, marginBottom: 14, marginLeft: 4 },
   hero: { borderRadius: radius.lg, padding: 18, borderWidth: 1, borderColor: colors.border },
@@ -323,8 +394,6 @@ const styles = StyleSheet.create({
   muted: { color: colors.textMuted, fontSize: 13, lineHeight: 19 },
   dbHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8 },
   dot: { width: 8, height: 8, borderRadius: 4 },
-  keyRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, paddingHorizontal: 12, height: 46, borderRadius: radius.md, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
-  keyInput: { flex: 1, color: colors.text, fontSize: 14, height: '100%' },
   linkBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8 },
   link: { color: colors.accent, fontWeight: '700', fontSize: 14 },
   settingLabel: { color: colors.text, fontSize: 15, fontWeight: '600' },

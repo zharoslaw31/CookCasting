@@ -4,7 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Chip, GhostButton, GradientButton, SectionTitle } from '../components/ui';
 import { goBack } from '../lib/nav';
-import { AREAS, CATEGORIES, DIETS, FLAGS, matches, plural, RECIPES } from '../lib/recipes';
+import { AREAS, CATEGORIES, DIETS, FLAGS, matches, plural, allRecipes } from '../lib/recipes';
 import { useStore } from '../lib/store';
 import { DEFAULT_FILTERS, Filters, Flag, SortBy } from '../lib/types';
 import { colors } from '../theme';
@@ -33,10 +33,11 @@ const SORTS: { value: SortBy; label: string; icon: string }[] = [
 
 export default function FiltersScreen() {
   const insets = useSafeAreaInsets();
-  const { state, dispatch } = useStore();
+  const { state, dispatch, worldKey } = useStore();
+  const world = !!worldKey && state.settings.world !== false;
   const [f, setF] = useState<Filters>(state.filters);
   const set = (patch: Partial<Filters>) => setF((p) => ({ ...p, ...patch }));
-  const count = useMemo(() => RECIPES.filter((r) => matches(r, f)).length, [f]);
+  const count = useMemo(() => allRecipes().filter((r) => matches(r, f)).length, [f]);
 
   // тап: увімкнути → виключити → нейтрально
   const cycle = (id: string, inc: string[], exc: string[]) => {
@@ -135,7 +136,7 @@ export default function FiltersScreen() {
           {AREAS.map((a) => (
             <Chip
               key={a.id}
-              label={f.excludeAreas.includes(a.id) ? `без: ${a.uk}` : `${a.uk} · ${a.count}`}
+              label={f.excludeAreas.includes(a.id) ? `без: ${a.uk}` : a.count ? `${a.uk} · ${a.count}` : `${a.uk} 🌍`}
               icon={a.flag}
               active={f.areas.includes(a.id) || f.excludeAreas.includes(a.id)}
               tone={f.excludeAreas.includes(a.id) ? 'nope' : 'brand'}
@@ -148,10 +149,10 @@ export default function FiltersScreen() {
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <GhostButton title="Скасувати" onPress={() => goBack()} style={{ flex: 1 }} />
         <GradientButton
-          title={count ? `Показати ${count} ${plural(count, ['рецепт', 'рецепти', 'рецептів'])}` : 'Нічого не знайдено'}
+          title={count ? `Показати ${count}${world ? '+' : ''} ${plural(count, ['рецепт', 'рецепти', 'рецептів'])}` : world ? 'Шукати у світовій базі' : 'Нічого не знайдено'}
           icon="sparkles"
-          onPress={count ? apply : undefined}
-          style={{ flex: 2, opacity: count ? 1 : 0.5 }}
+          onPress={count || world ? apply : undefined}
+          style={{ flex: 2, opacity: count || world ? 1 : 0.5 }}
         />
       </View>
     </View>
