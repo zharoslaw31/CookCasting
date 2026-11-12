@@ -52,3 +52,4 @@ jobs:
     needs: data
     if: needs.data.outputs.changed == 'true'
     uses: ./.github/workflows/deploy.yml
+    secrets: inherit

@@ -40,7 +40,7 @@ jobs:
             REF="$(node -e 'const p=(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY.split(".")[1]||"");try{process.stdout.write(JSON.parse(Buffer.from(p,"base64url").toString()).ref||"")}catch{}')"
             [ -n "$REF" ] && SB_URL="https://$REF.supabase.co"
           fi
-          echo "Supabase: ${SB_URL:+налаштовано}${SB_URL:-не налаштовано}"
+          echo "Supabase URL: ${SB_URL:+є}${SB_URL:-немає}; ключ: ${EXPO_PUBLIC_SUPABASE_ANON_KEY:+є, починається з ${EXPO_PUBLIC_SUPABASE_ANON_KEY:0:3}}${EXPO_PUBLIC_SUPABASE_ANON_KEY:-немає}"
           export EXPO_PUBLIC_SUPABASE_URL="$SB_URL"
           npx expo export --platform web --output-dir dist
       - name: SPA fallback for deep links
