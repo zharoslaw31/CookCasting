@@ -34,6 +34,16 @@ GitHub Actions (**Update recipes**) оновлює базу щопонеділк
 
 Потрібен безкоштовний ключ Spoonacular (150 запитів на день): вставте його в *Профіль → Світова база ∞*. Ключ зберігається лише на вашому пристрої й не потрапляє в код сайту.
 
+## 👤 Акаунт і синхронізація
+
+Вхід за email і паролем, як у MovieCasting, і той самий акаунт. Обране, приготоване, оцінки, список покупок і холодильник зберігаються в хмарі й доступні на всіх пристроях. Без входу все зберігається лише на пристрої.
+
+Налаштування (один раз):
+
+1. У Supabase виконайте [`supabase/cook_libraries.sql`](supabase/cook_libraries.sql) (SQL Editor → Run).
+2. У Supabase → Authentication → URL Configuration → Redirect URLs додайте `https://zharoslaw31.github.io/CookCasting/`.
+3. У цьому репозиторії додайте секрети Actions `SUPABASE_URL` і `SUPABASE_ANON_KEY` (ті самі значення, що в MovieCasting) і перезапустіть «Publish website».
+
 ## 🌐 Встановити на телефон
 
 - **iPhone (Safari):** кнопка «Поділитися» → «На початковий екран».

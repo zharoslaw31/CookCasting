@@ -3,6 +3,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import React, { useMemo, useState } from 'react';
 import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AccountCard } from '../../components/AccountCard';
 import { SectionTitle } from '../../components/ui';
 import { AREAS, areaOf, catOf, DB, EXTRA, getRecipe, RECIPES } from '../../lib/recipes';
 import { ENV_SPOON_KEY, validateSpoonKey } from '../../lib/spoon';
@@ -151,6 +152,8 @@ export default function ProfileScreen() {
       </LinearGradient>
 
       {/* Статистика */}
+      <AccountCard />
+
       <SectionTitle>Статистика</SectionTitle>
       <View style={styles.grid}>
         <Stat icon="flame" color={colors.accent} value={stats.swipes} label="Свайпів" />

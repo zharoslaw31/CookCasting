@@ -2,9 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as H from 'expo-haptics';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import { Platform } from 'react-native';
-import { getRecipe } from './recipes';
+import { EXTRA, getRecipe, isWorld } from './recipes';
 import { ENV_SPOON_KEY, loadWorld, saveWorld } from './spoon';
-import { DEFAULT_FILTERS, Filters, LibraryEntry, Profile, Settings, ShopItem, SwipeKind } from './types';
+import { DEFAULT_FILTERS, Filters, LibraryEntry, Profile, Recipe, Settings, ShopItem, SwipeKind } from './types';
 
 const STORAGE_KEY = 'cookcasting/state/v1';
 const FILTERS_VERSION = 1;
@@ -21,6 +21,8 @@ type State = {
   videosViewed: number;
   shopping: ShopItem[];
   filtersV?: number;
+  cloudUserId?: string | null; // з яким акаунтом пов'язані дані на цьому пристрої
+  lastSyncAt?: number;
 };
 
 const DEFAULT_PROFILE: Profile = { name: 'Кухар', avatar: '👩‍🍳', createdAt: Date.now() };
@@ -57,7 +59,72 @@ type Action =
   | { type: 'shopToggle'; key: string }
   | { type: 'shopRemove'; keys: string[] }
   | { type: 'shopClearDone' }
-  | { type: 'resetLibrary' };
+  | { type: 'resetLibrary' }
+  | { type: 'applyCloud'; data: SyncData; userId: string; at: number }
+  | { type: 'cloudLinked'; userId: string; at: number }
+  | { type: 'signedOut' };
+
+/** Те, що зберігається в хмарі для акаунта. */
+export type SyncData = Pick<State, 'profile' | 'liked' | 'cooked' | 'disliked' | 'history' | 'videosViewed' | 'shopping'> & {
+  pantry?: string[];
+  /** перекладені рецепти світової бази з бібліотеки — щоб вони відкривались і на іншому пристрої */
+  world?: Recipe[];
+};
+
+export const syncDataOf = (s: State): SyncData => {
+  const ids = new Set([...s.liked, ...s.cooked, ...s.disliked].map((e) => e.id).concat(s.shopping.map((x) => x.recipeId ?? 0)));
+  return {
+    profile: s.profile,
+    liked: s.liked,
+    cooked: s.cooked,
+    disliked: s.disliked,
+    history: s.history,
+    videosViewed: s.videosViewed,
+    shopping: s.shopping,
+    pantry: s.settings.pantry ?? [],
+    world: [...ids].filter(isWorld).map((id) => EXTRA.get(id)).filter((r): r is Recipe => !!r).sort((a, b) => a.id - b.id),
+  };
+};
+
+const mergeList = (a: LibraryEntry[], b: LibraryEntry[]) => {
+  const map = new Map<number, LibraryEntry>();
+  [...a, ...b].forEach((e) => {
+    const cur = map.get(e.id);
+    if (!cur || e.at > cur.at) map.set(e.id, { ...e, myRating: e.myRating ?? cur?.myRating });
+  });
+  return [...map.values()].sort((x, y) => y.at - x.at);
+};
+
+/** Об'єднання гостьових даних пристрою з даними акаунта (при першому вході). */
+export const mergeSync = (local: SyncData, cloud: SyncData): SyncData => {
+  const seen = new Set<string>();
+  const shopKeys = new Set<string>();
+  const world = new Map<number, Recipe>();
+  [...(cloud.world ?? []), ...(local.world ?? [])].forEach((r) => world.set(r.id, r));
+  return {
+    profile: cloud.profile ?? local.profile,
+    liked: mergeList(local.liked, cloud.liked ?? []),
+    cooked: mergeList(local.cooked, cloud.cooked ?? []),
+    disliked: mergeList(local.disliked, cloud.disliked ?? []),
+    history: [...(cloud.history ?? []), ...local.history]
+      .filter((h) => {
+        const k = `${h.id}|${h.at}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      })
+      .sort((x, y) => x.at - y.at)
+      .slice(-3000),
+    videosViewed: Math.max(local.videosViewed, cloud.videosViewed ?? 0),
+    shopping: [...(cloud.shopping ?? []), ...local.shopping].filter((x) => {
+      if (shopKeys.has(x.key)) return false;
+      shopKeys.add(x.key);
+      return true;
+    }),
+    pantry: [...new Set([...(cloud.pantry ?? []), ...(local.pantry ?? [])])],
+    world: [...world.values()],
+  };
+};
 
 const without = (list: LibraryEntry[], id: number) => list.filter((e) => e.id !== id);
 const has = (list: LibraryEntry[], id: number) => list.some((e) => e.id === id);
@@ -139,6 +206,38 @@ function reducer(s: State, a: Action): State {
       return { ...s, shopping: s.shopping.filter((x) => !x.done) };
     case 'resetLibrary':
       return { ...s, liked: [], cooked: [], disliked: [], history: [], videosViewed: 0, shopping: [] };
+    case 'applyCloud': {
+      (a.data.world ?? []).forEach((r) => EXTRA.has(r.id) || EXTRA.set(r.id, r));
+      return {
+        ...s,
+        profile: a.data.profile ?? s.profile,
+        liked: existing(a.data.liked),
+        cooked: existing(a.data.cooked),
+        disliked: existing(a.data.disliked),
+        history: a.data.history ?? [],
+        videosViewed: a.data.videosViewed ?? 0,
+        shopping: a.data.shopping ?? [],
+        settings: { ...s.settings, pantry: a.data.pantry ?? s.settings.pantry },
+        cloudUserId: a.userId,
+        lastSyncAt: a.at,
+      };
+    }
+    case 'cloudLinked':
+      return { ...s, cloudUserId: a.userId, lastSyncAt: a.at };
+    case 'signedOut':
+      return {
+        ...s,
+        liked: [],
+        cooked: [],
+        disliked: [],
+        history: [],
+        videosViewed: 0,
+        shopping: [],
+        settings: { ...s.settings, pantry: [] },
+        profile: { ...DEFAULT_PROFILE, createdAt: Date.now() },
+        cloudUserId: null,
+        lastSyncAt: undefined,
+      };
   }
 }
 
