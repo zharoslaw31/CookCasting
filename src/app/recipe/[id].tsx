@@ -1,0 +1,416 @@
+import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Linking, Pressable, ScrollView, ScrollViewInstance, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Fact, Heading, RecipeRow } from '../../components/RecipeParts';
+import { TrailerPlayer } from '../../components/TrailerPlayer';
+import { GhostButton, GradientButton, Stars, Toast } from '../../components/ui';
+import { goBack } from '../../lib/nav';
+import { areaLabel, areaOf, catOf, DIFFICULTY_LABEL, difficulty, FLAGS, formatTime, getRecipe, ingredientImage, plural, similar } from '../../lib/recipes';
+import { shareRecipe, shareRecipeText } from '../../lib/share';
+import { useHaptics, useStore } from '../../lib/store';
+import { colors, gradients, radius } from '../../theme';
+
+export default function RecipeScreen() {
+  const { id: rawId } = useLocalSearchParams<{ id: string }>();
+  const id = Number(rawId);
+  const r = getRecipe(id);
+  const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const { isLiked, isCooked, isDisliked, ratingOf, dispatch } = useStore();
+  const haptic = useHaptics();
+  const [playing, setPlaying] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [solidHeader, setSolidHeader] = useState(false);
+  const [checked, setChecked] = useState<Set<number>>(new Set());
+  const [doneSteps, setDoneSteps] = useState<Set<number>>(new Set());
+  const [cookMode, setCookMode] = useState<number | null>(null);
+  const scroll = useRef<ScrollViewInstance>(null);
+  const sim = useMemo(() => (r ? similar(r, 12) : []), [r]);
+
+  useEffect(() => {
+    setPlaying(false);
+    setChecked(new Set());
+    setDoneSteps(new Set());
+    setCookMode(null);
+    scroll.current?.scrollTo({ y: 0, animated: false });
+  }, [id]);
+
+  const flash = (t: string) => {
+    setToast(t);
+    setTimeout(() => setToast(null), 2200);
+  };
+
+  if (!r) {
+    return (
+      <View style={[styles.screen, styles.center]}>
+        <Text style={styles.emptyEmoji}>🍽️</Text>
+        <Text style={styles.muted}>Рецепт не знайдено</Text>
+        <GhostButton title="Назад" icon="chevron-back" onPress={goBack} style={{ marginTop: 16 }} />
+      </View>
+    );
+  }
+
+  const liked = isLiked(id);
+  const cooked = isCooked(id);
+  const disliked = isDisliked(id);
+  const myRating = ratingOf(id);
+  const heroH = Math.min(width * 0.95, 480);
+  const area = areaOf(r.area);
+  const cat = catOf(r.cat);
+  const d = difficulty(r);
+  const free = FLAGS.filter((f) => !r.flags.includes(f.id) && ['meat', 'dairy', 'gluten', 'egg', 'nuts'].includes(f.id));
+
+  const toggleSet = (set: Set<number>, i: number) => {
+    const n = new Set(set);
+    if (n.has(i)) n.delete(i);
+    else n.add(i);
+    return n;
+  };
+
+  const addToShopping = () => {
+    // якщо щось уже відмічено як «є вдома» — додаємо лише решту
+    const items = r.ingr.filter((_, i) => !checked.has(i)).map((i) => ({ name: i.n, amount: i.m, recipeId: r.id }));
+    dispatch({ type: 'shopAdd', items });
+    haptic('success');
+    flash(`Додано до списку покупок: ${items.length}`);
+  };
+
+  const share = async () => {
+    const res = await shareRecipe(r);
+    if (res === 'copied') flash('Посилання скопійовано');
+  };
+  const shareFull = async () => {
+    const res = await shareRecipeText(r);
+    if (res === 'copied') flash('Рецепт скопійовано');
+  };
+
+  return (
+    <View style={styles.screen}>
+      <ScrollView
+        ref={scroll}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={64}
+        onScroll={(e) => {
+          const solid = e.nativeEvent.contentOffset.y > heroH - 140;
+          if (solid !== solidHeader) setSolidHeader(solid);
+        }}
+      >
+        <View style={{ height: heroH }}>
+          {playing && r.video ? (
+            <View style={{ position: 'absolute', left: 0, right: 0, top: insets.top + 56, aspectRatio: 16 / 9 }}>
+              <TrailerPlayer videoKey={r.video} muted={false} />
+            </View>
+          ) : (
+            <>
+              <Image source={{ uri: r.img }} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} />
+              <LinearGradient colors={['rgba(14,11,10,0.35)', 'rgba(14,11,10,0.05)', colors.bg]} locations={[0, 0.5, 1]} style={StyleSheet.absoluteFill} />
+              {r.video ? (
+                <Pressable onPress={() => setPlaying(true)} style={styles.playCenter} accessibilityLabel="Дивитись відеорецепт">
+                  <LinearGradient colors={gradients.brand} style={styles.playBtn}>
+                    <Ionicons name="play" size={30} color="#fff" style={{ marginLeft: 4 }} />
+                  </LinearGradient>
+                  <Text style={styles.playText}>Відеорецепт</Text>
+                </Pressable>
+              ) : null}
+            </>
+          )}
+        </View>
+
+        <View style={[styles.body, playing && { marginTop: 0 }]}>
+          <Text style={styles.title}>{r.name}</Text>
+          {r.nameEn !== r.name ? <Text style={styles.original}>{r.nameEn}</Text> : null}
+
+          <View style={styles.chips}>
+            <View style={styles.chip}>
+              <Text style={styles.chipText}>
+                {area.flag} {areaLabel(r.area)}
+              </Text>
+            </View>
+            <View style={styles.chip}>
+              <Text style={styles.chipText}>
+                {cat.emoji} {cat.uk}
+              </Text>
+            </View>
+            {r.tags.map((t) => (
+              <View key={t} style={[styles.chip, styles.chipSoft]}>
+                <Text style={styles.chipText}>{t}</Text>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.facts}>
+            <Fact label="Час" value={`≈ ${formatTime(r.time)}`} color={colors.gold} />
+            <Fact label="Складність" value={DIFFICULTY_LABEL[d]} color={d === 1 ? colors.like : d === 2 ? colors.gold : colors.nope} />
+            <Fact label="Інгредієнти" value={`${r.ingr.length}`} />
+            <Fact label="Кроків" value={`${r.steps.length}`} />
+          </View>
+          {free.length ? <Text style={styles.free}>Без: {free.map((f) => `${f.icon} ${f.label}`).join(', ')}</Text> : null}
+
+          {cooked ? (
+            <View style={styles.rateBox}>
+              <Text style={styles.rateTitle}>Як вийшло?</Text>
+              <Stars
+                value={myRating ?? 0}
+                onChange={(v) => {
+                  dispatch({ type: 'rate', id, rating: v });
+                  haptic('light');
+                }}
+              />
+            </View>
+          ) : null}
+
+          <Heading
+            right={
+              <Pressable onPress={addToShopping} style={styles.smallBtn} hitSlop={6}>
+                <Ionicons name="cart-outline" size={16} color={colors.accent} />
+                <Text style={styles.smallBtnText}>{checked.size ? 'Докупити решту' : 'У список покупок'}</Text>
+              </Pressable>
+            }
+          >
+            Інгредієнти
+          </Heading>
+          <Text style={styles.hint}>Позначте те, що вже є вдома</Text>
+          {r.ingr.map((ing, i) => {
+            const on = checked.has(i);
+            return (
+              <Pressable key={i} onPress={() => setChecked((s) => toggleSet(s, i))} style={styles.ingRow}>
+                <Ionicons name={on ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={on ? colors.like : colors.textMuted} />
+                <Image source={{ uri: ingredientImage(ing.en) }} style={styles.ingImg} contentFit="contain" />
+                <Text style={[styles.ingName, on && styles.struck]} numberOfLines={2}>
+                  {ing.n}
+                </Text>
+                <Text style={[styles.ingAmount, on && styles.struck]} numberOfLines={2}>
+                  {ing.m}
+                </Text>
+              </Pressable>
+            );
+          })}
+
+          <Heading
+            right={
+              <Pressable onPress={() => setCookMode(0)} style={styles.smallBtn} hitSlop={6}>
+                <Ionicons name="flame-outline" size={16} color={colors.accent} />
+                <Text style={styles.smallBtnText}>Режим готування</Text>
+              </Pressable>
+            }
+          >
+            Приготування
+          </Heading>
+          {r.steps.map((s, i) => {
+            const on = doneSteps.has(i);
+            return (
+              <Pressable key={i} onPress={() => setDoneSteps((x) => toggleSet(x, i))} style={[styles.step, on && { opacity: 0.5 }]}>
+                <View style={[styles.stepNum, on && { backgroundColor: colors.like }]}>
+                  {on ? <Ionicons name="checkmark" size={16} color="#fff" /> : <Text style={styles.stepNumText}>{i + 1}</Text>}
+                </View>
+                <Text style={styles.stepText}>{s}</Text>
+              </Pressable>
+            );
+          })}
+          {doneSteps.size === r.steps.length && r.steps.length > 0 && !cooked ? (
+            <GradientButton
+              title="Готово! Позначити «Приготував»"
+              icon="checkmark-done"
+              colorsPair={gradients.like}
+              onPress={() => {
+                dispatch({ type: 'toggle', id, list: 'cooked' });
+                haptic('success');
+                flash('Смачного! Оцініть, як вийшло 👆');
+                scroll.current?.scrollTo({ y: heroH - 40, animated: true });
+              }}
+              style={{ marginTop: 14 }}
+            />
+          ) : null}
+
+          <Text style={styles.note}>
+            Рецепт перекладено українською автоматично з бази TheMealDB. Час приготування орієнтовний.
+          </Text>
+          <View style={styles.links}>
+            <Pressable onPress={shareFull} style={styles.smallBtn}>
+              <Ionicons name="document-text-outline" size={16} color={colors.accent} />
+              <Text style={styles.smallBtnText}>Поділитись текстом</Text>
+            </Pressable>
+            {r.src ? (
+              <Pressable onPress={() => Linking.openURL(r.src!)} style={styles.smallBtn}>
+                <Ionicons name="open-outline" size={16} color={colors.accent} />
+                <Text style={styles.smallBtnText}>Оригінал</Text>
+              </Pressable>
+            ) : null}
+            {r.video ? (
+              <Pressable onPress={() => Linking.openURL(`https://www.youtube.com/watch?v=${r.video}`)} style={styles.smallBtn}>
+                <Ionicons name="logo-youtube" size={16} color={colors.accent} />
+                <Text style={styles.smallBtnText}>YouTube</Text>
+              </Pressable>
+            ) : null}
+          </View>
+
+          <RecipeRow title="Схожі рецепти" items={sim} mark={(sid) => (isLiked(sid) ? 'heart' : isCooked(sid) ? 'restaurant' : null)} />
+        </View>
+      </ScrollView>
+
+      {solidHeader ? (
+        <View style={[styles.header, { height: insets.top + 56, paddingTop: insets.top }]}>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {r.name}
+          </Text>
+        </View>
+      ) : null}
+
+      <Pressable onPress={goBack} style={[styles.topBtn, { top: insets.top + 8, left: 14 }]} hitSlop={10} accessibilityLabel="Назад">
+        <Ionicons name="chevron-down" size={24} color="#fff" />
+      </Pressable>
+      <View style={[styles.topRight, { top: insets.top + 8 }]}>
+        <Pressable onPress={share} style={styles.circle} hitSlop={8} accessibilityLabel="Поділитись">
+          <Ionicons name="share-outline" size={20} color="#fff" />
+        </Pressable>
+      </View>
+
+      {toast ? <Toast text={toast} bottom={Math.max(insets.bottom, 14) + 84} /> : null}
+
+      <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, 14) }]}>
+        <Pressable
+          accessibilityLabel={disliked ? 'Прибрати з «Не цікаво»' : 'Не цікаво'}
+          onPress={() => {
+            dispatch({ type: 'toggle', id, list: 'disliked' });
+            haptic('light');
+            if (!disliked) flash('Більше не покажемо в Кастингу');
+          }}
+          style={[styles.nopeBtn, disliked && { backgroundColor: colors.nope + '33', borderColor: colors.nope }]}
+        >
+          <Ionicons name="close" size={24} color={colors.nope} />
+        </Pressable>
+        <GhostButton
+          title="Готував"
+          icon={cooked ? 'restaurant' : 'restaurant-outline'}
+          tight
+          onPress={() => {
+            dispatch({ type: 'toggle', id, list: 'cooked' });
+            haptic('light');
+            if (!cooked) setTimeout(() => scroll.current?.scrollTo({ y: heroH - 40, animated: true }), 50);
+          }}
+          style={[{ flex: 1 }, cooked && { borderColor: colors.cooked, backgroundColor: colors.cooked + '22' }]}
+        />
+        <GradientButton
+          title={liked ? 'В обраному' : width < 380 ? 'В обране' : 'Хочу!'}
+          icon={liked ? 'heart' : 'heart-outline'}
+          colorsPair={liked ? gradients.like : gradients.brand}
+          tight
+          onPress={() => {
+            dispatch({ type: 'toggle', id, list: 'liked' });
+            haptic(liked ? 'light' : 'success');
+          }}
+          style={{ flex: 1.5 }}
+        />
+      </View>
+
+      {cookMode !== null ? (
+        <View style={[styles.cook, { paddingTop: insets.top + 16, paddingBottom: Math.max(insets.bottom, 16) }]}>
+          <View style={styles.cookHead}>
+            <Text style={styles.cookCounter}>
+              Крок {cookMode + 1} з {r.steps.length}
+            </Text>
+            <Pressable onPress={() => setCookMode(null)} hitSlop={10} accessibilityLabel="Закрити">
+              <Ionicons name="close" size={30} color={colors.text} />
+            </Pressable>
+          </View>
+          <View style={styles.progress}>
+            <View style={[styles.progressFill, { width: `${((cookMode + 1) / r.steps.length) * 100}%` }]} />
+          </View>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingVertical: 24 }}>
+            <Text style={styles.cookText}>{r.steps[cookMode]}</Text>
+            {cookMode === 0 ? (
+              <Text style={styles.cookHint}>
+                Знадобиться: {r.ingr.length} {plural(r.ingr.length, ['інгредієнт', 'інгредієнти', 'інгредієнтів'])}. Екран можна гортати кнопками внизу.
+              </Text>
+            ) : null}
+          </ScrollView>
+          <View style={styles.cookBar}>
+            <GhostButton title="Назад" icon="chevron-back" onPress={() => setCookMode(Math.max(0, cookMode - 1))} style={{ flex: 1, opacity: cookMode === 0 ? 0.4 : 1 }} />
+            {cookMode < r.steps.length - 1 ? (
+              <GradientButton
+                title="Далі"
+                icon="chevron-forward"
+                onPress={() => {
+                  setDoneSteps((s) => new Set(s).add(cookMode));
+                  setCookMode(cookMode + 1);
+                  haptic('light');
+                }}
+                style={{ flex: 1.5 }}
+              />
+            ) : (
+              <GradientButton
+                title="Готово!"
+                icon="checkmark-done"
+                colorsPair={gradients.like}
+                onPress={() => {
+                  setDoneSteps(new Set(r.steps.map((_, i) => i)));
+                  if (!cooked) dispatch({ type: 'toggle', id, list: 'cooked' });
+                  setCookMode(null);
+                  haptic('success');
+                  flash('Смачного! Оцініть, як вийшло');
+                  setTimeout(() => scroll.current?.scrollTo({ y: heroH - 40, animated: true }), 50);
+                }}
+                style={{ flex: 1.5 }}
+              />
+            )}
+          </View>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.bg },
+  center: { alignItems: 'center', justifyContent: 'center' },
+  emptyEmoji: { fontSize: 44, marginBottom: 8 },
+  muted: { color: colors.textMuted, fontSize: 15 },
+  playCenter: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
+  playBtn: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center' },
+  playText: { color: '#fff', fontWeight: '800', marginTop: 10, textShadowColor: 'rgba(0,0,0,0.7)', textShadowRadius: 8 },
+  body: { paddingHorizontal: 18, marginTop: -70, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  title: { color: colors.text, fontSize: 28, fontWeight: '900', letterSpacing: -0.4 },
+  original: { color: colors.textDim, fontSize: 14, marginTop: 4 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
+  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.accent + '1F', borderWidth: 1, borderColor: colors.accent + '55' },
+  chipSoft: { backgroundColor: colors.bgElevated, borderColor: colors.border },
+  chipText: { color: colors.text, fontSize: 13, fontWeight: '700' },
+  facts: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 18 },
+  free: { color: colors.textDim, fontSize: 13, marginTop: 12, lineHeight: 19 },
+  rateBox: { marginTop: 18, padding: 14, borderRadius: radius.md, backgroundColor: colors.cooked + '18', borderWidth: 1, borderColor: colors.cooked + '55', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 },
+  rateTitle: { color: colors.text, fontSize: 16, fontWeight: '800' },
+  hint: { color: colors.textMuted, fontSize: 13, marginTop: -6, marginBottom: 6 },
+  smallBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, height: 34, borderRadius: 17, backgroundColor: colors.accent + '18', borderWidth: 1, borderColor: colors.accent + '44' },
+  smallBtnText: { color: colors.accent, fontSize: 13, fontWeight: '800' },
+  ingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  ingImg: { width: 34, height: 34 },
+  ingName: { flex: 1, color: colors.text, fontSize: 15, fontWeight: '600' },
+  ingAmount: { color: colors.gold, fontSize: 14, fontWeight: '700', maxWidth: '42%', textAlign: 'right' },
+  struck: { textDecorationLine: 'line-through', color: colors.textMuted },
+  step: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  stepNum: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
+  stepNumText: { color: '#fff', fontWeight: '900', fontSize: 14 },
+  stepText: { flex: 1, color: '#E6DDD8', fontSize: 16, lineHeight: 24 },
+  note: { color: colors.textMuted, fontSize: 12, marginTop: 22, lineHeight: 17 },
+  links: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  header: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: colors.bg + 'F5', borderBottomWidth: 1, borderBottomColor: colors.border, justifyContent: 'center', paddingLeft: 66, paddingRight: 66 },
+  headerTitle: { color: colors.text, fontSize: 16, fontWeight: '800' },
+  circle: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(14,11,10,0.6)', alignItems: 'center', justifyContent: 'center' },
+  topBtn: { position: 'absolute', width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(14,11,10,0.6)', alignItems: 'center', justifyContent: 'center' },
+  topRight: { position: 'absolute', right: 14, flexDirection: 'row', gap: 8 },
+  nopeBtn: { width: 52, height: 52, borderRadius: 26, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bgElevated, alignItems: 'center', justifyContent: 'center' },
+  bar: { position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingTop: 14, backgroundColor: colors.bg + 'F2', borderTopWidth: 1, borderTopColor: colors.border },
+  cook: { ...StyleSheet.absoluteFill, backgroundColor: colors.bg, paddingHorizontal: 22, zIndex: 50 },
+  cookHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  cookCounter: { color: colors.accent, fontSize: 16, fontWeight: '900', letterSpacing: 0.5 },
+  progress: { height: 6, borderRadius: 3, backgroundColor: colors.card, marginTop: 14, overflow: 'hidden' },
+  progressFill: { height: '100%', backgroundColor: colors.accent, borderRadius: 3 },
+  cookText: { color: colors.text, fontSize: 24, lineHeight: 36, fontWeight: '600' },
+  cookHint: { color: colors.textMuted, fontSize: 14, marginTop: 20 },
+  cookBar: { flexDirection: 'row', gap: 12 },
+});

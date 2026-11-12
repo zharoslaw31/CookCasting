@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "CookCasting",
+    "slug": "cookcasting",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.cookcasting.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0E0B0A",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.cookcasting.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "single",
+      "name": "CookCasting",
+      "shortName": "CookCasting",
+      "lang": "uk",
+      "themeColor": "#0E0B0A",
+      "backgroundColor": "#0E0B0A"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-image",
+      "expo-font"
+    ],
+    "scheme": "cookcasting",
+    "backgroundColor": "#0E0B0A",
+    "experiments": {
+      "typedRoutes": false,
+      "baseUrl": "/CookCasting"
+    }
+  }
+}

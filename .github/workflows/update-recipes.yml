@@ -1,0 +1,54 @@
+name: Update recipes
+
+# Завантажує всі рецепти TheMealDB, перекладає нові українською,
+# зберігає базу в репозиторії й публікує сайт. Запускається раз на тиждень
+# або вручну: Actions → Update recipes → Run workflow.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * 1'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/build-recipes.mjs'
+      - 'scripts/glossary.mjs'
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: recipes
+  cancel-in-progress: false
+
+jobs:
+  data:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build and translate recipes
+        run: node scripts/build-recipes.mjs
+      - name: Commit data
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/data/recipes.json scripts/translations.json
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "Оновлено базу рецептів"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  publish:
+    needs: data
+    if: needs.data.outputs.changed == 'true'
+    uses: ./.github/workflows/deploy.yml

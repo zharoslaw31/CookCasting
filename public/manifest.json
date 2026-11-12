@@ -1,0 +1,26 @@
+{
+  "name": "CookCasting",
+  "short_name": "CookCasting",
+  "description": "Підбирай рецепти кухонь світу свайпами — українською.",
+  "lang": "uk",
+  "start_url": "/CookCasting/",
+  "scope": "/CookCasting/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0E0B0A",
+  "theme_color": "#0E0B0A",
+  "icons": [
+    {
+      "src": "/CookCasting/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/CookCasting/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
