@@ -31,9 +31,18 @@ jobs:
       - name: Build web app
         env:
           # публічні адреса й anon-ключ Supabase (ті самі, що в MovieCasting); доступ до даних обмежує RLS
-          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        run: npx expo export --platform web --output-dir dist
+          SB_URL: ${{ secrets.SUPABASE_URL || vars.SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY }}
+        run: |
+          SB_URL="$(printf '%s' "$SB_URL" | tr -d '[:space:]')"
+          if [ -z "$SB_URL" ] && [ -n "$EXPO_PUBLIC_SUPABASE_ANON_KEY" ]; then
+            # адресу проєкту можна взяти з самого anon-ключа (поле ref у JWT)
+            REF="$(node -e 'const p=(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY.split(".")[1]||"");try{process.stdout.write(JSON.parse(Buffer.from(p,"base64url").toString()).ref||"")}catch{}')"
+            [ -n "$REF" ] && SB_URL="https://$REF.supabase.co"
+          fi
+          echo "Supabase: ${SB_URL:+налаштовано}${SB_URL:-не налаштовано}"
+          export EXPO_PUBLIC_SUPABASE_URL="$SB_URL"
+          npx expo export --platform web --output-dir dist
       - name: SPA fallback for deep links
         run: cp dist/index.html dist/404.html && touch dist/.nojekyll
       - uses: actions/upload-pages-artifact@v3
