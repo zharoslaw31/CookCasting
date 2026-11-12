@@ -23,6 +23,7 @@ import { AREAS, CATEGORIES, INGREDIENTS, TAGS, fixText } from './glossary.mjs';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'src/data/recipes.json');
 const TM_FILE = join(ROOT, 'scripts/translations.json');
+const RAW_FILE = join(ROOT, 'scripts/themealdb-raw.json');
 const API = 'https://www.themealdb.com/api/json/v1/1';
 
 const args = process.argv.slice(2);
@@ -96,14 +97,17 @@ async function gtx(text) {
       const d = await res.json();
       return (d[0] ?? []).map((s) => s[0] ?? '').join('');
     } catch (e) {
-      if (i >= 6) throw new Error(`переклад: ${e.message}`);
-      await sleep(1500 * 2 ** i);
+      if (i >= 5) throw new Error(`переклад: ${e.message}`);
+      // 429 — сервіс просить зачекати: паузи 20 с, 40 с, 80 с…
+      await sleep((String(e.message).includes('429') ? 20000 : 1500) * 2 ** i);
     }
   }
 }
 
 /** Перекладає масив рядків з пам'яттю перекладів і пакетами по ~4 тис. символів. */
+let translateBlocked = false;
 async function translateAll(texts, label) {
+  if (translateBlocked) return (t) => (t && t in tm ? fixText(tm[t]) : null);
   const todo = [...new Set(texts.filter((t) => t && !(t in tm)))];
   let done = 0;
   const batches = [];
@@ -137,13 +141,21 @@ async function translateAll(texts, label) {
   };
 
   // по 3 запити паралельно, щоб не впертися в обмеження
-  for (let i = 0; i < batches.length; i += 3) {
-    await Promise.all(batches.slice(i, i + 3).map(runBatch));
-    if (tmDirty > 200) saveTm();
-    await sleep(300);
+  // по одному запиту з паузою, щоб не впертися в обмеження сервісу перекладу
+  try {
+    for (const batch of batches) {
+      await runBatch(batch);
+      if (tmDirty > 100) saveTm();
+      await sleep(700);
+    }
+  } catch (e) {
+    // перекладач тимчасово не пускає — зберігаємо зроблене; неперекладені рецепти додадуться наступного запуску
+    console.warn(`\n${label}: ${e.message}. Продовжимо наступного разу.`);
+    translateBlocked = true;
+    saveTm();
   }
   if (todo.length) process.stdout.write('\n');
-  return (t) => (t ? fixText(tm[t] ?? t) : '');
+  return (t) => (t ? (t in tm ? fixText(tm[t]) : null) : '');
 }
 
 function saveTm() {
@@ -333,6 +345,8 @@ async function main() {
     meals = Array.isArray(raw) ? raw : raw.meals;
   } else {
     meals = await fetchAllMeals();
+    // сирі дані — щоб можна було перекладати й без доступу до TheMealDB (--input scripts/themealdb-raw.json)
+    writeFileSync(RAW_FILE, JSON.stringify({ fetchedAt: new Date().toISOString(), meals }));
   }
   if (!meals?.length) throw new Error('Немає рецептів');
   meals.sort((a, b) => +a.idMeal - +b.idMeal);
@@ -381,13 +395,29 @@ async function main() {
   const tStep = await translateAll(parsed.flatMap((r) => r.steps), 'Кроки');
   saveTm();
 
-  const ingUk = (en) => INGREDIENTS[ingKey(en)] ?? capFirst(tIng(titleCase(en)));
+  // рецепт без повного перекладу пропускаємо — він з'явиться після наступного запуску
+  const MISSING = Symbol('missing');
+  const need = (v) => {
+    if (v === null) throw MISSING;
+    return v;
+  };
+  const ingUk = (en) => INGREDIENTS[ingKey(en)] ?? capFirst(need(tIng(titleCase(en))));
   const measureUk = (m) => {
     const c = convertMeasure(m);
-    return /[a-z]{2,}/i.test(c) ? tMeasure(c) : c;
+    return /[a-z]{2,}/i.test(c) ? need(tMeasure(c)) : c;
+  };
+  let skipped = 0;
+  const build = (r) => {
+    try {
+      return buildOne(r);
+    } catch (e) {
+      if (e !== MISSING) throw e;
+      skipped++;
+      return null;
+    }
   };
 
-  const recipes = parsed.map((r) => {
+  const buildOne = (r) => {
     const enAll = r.ingr.map((i) => i.en).join(' | ');
     const flags = Object.entries(FLAG_RULES)
       .filter(([, re]) => re.test(enAll))
@@ -398,20 +428,22 @@ async function main() {
     const minutes = estimateMinutes(r);
     return {
       id: r.id,
-      name: capFirst(fixText(tName(r.nameEn))),
+      name: capFirst(fixText(need(tName(r.nameEn)))),
       nameEn: r.nameEn,
       cat: r.cat,
       area: r.area,
       img: r.img,
       video: r.video,
-      tags: r.tags.map((t) => TAGS[t.toLowerCase()] ?? capFirst(tTag(t))),
+      tags: r.tags.map((t) => TAGS[t.toLowerCase()] ?? capFirst(need(tTag(t)))),
       src: r.src,
       time: minutes,
       flags,
       ingr: r.ingr.map((i) => ({ n: ingUk(i.en), en: i.en, m: measureUk(i.m) })),
-      steps: r.steps.map((s) => capFirst(tStep(s))),
+      steps: r.steps.map((s) => capFirst(need(tStep(s)))),
     };
-  });
+  };
+  const recipes = parsed.map(build).filter(Boolean);
+  if (skipped) console.log(`Без повного перекладу (додадуться наступного разу): ${skipped}`);
 
   const usedAreas = [...new Set(recipes.map((r) => r.area))];
   const usedCats = [...new Set(recipes.map((r) => r.cat))];
@@ -421,10 +453,10 @@ async function main() {
     builtAt: new Date().toISOString().slice(0, 10),
     hash: hash(recipes.map((r) => r.id)),
     areas: usedAreas
-      .map((a) => ({ id: a, ...(AREAS[a] ?? { uk: capFirst(tArea(`${a} cuisine`)), flag: '🌍' }), count: recipes.filter((r) => r.area === a).length }))
+      .map((a) => ({ id: a, ...(AREAS[a] ?? { uk: capFirst((tArea(`${a} cuisine`) ?? a).replace(/\s*кухня$/i, '')), flag: '🌍' }), count: recipes.filter((r) => r.area === a).length }))
       .sort((x, y) => y.count - x.count),
     cats: usedCats
-      .map((c) => ({ id: c, ...(CATEGORIES[c] ?? { uk: capFirst(tCat(c)), emoji: '🍽️' }), count: recipes.filter((r) => r.cat === c).length }))
+      .map((c) => ({ id: c, ...(CATEGORIES[c] ?? { uk: capFirst(tCat(c) ?? c), emoji: '🍽️' }), count: recipes.filter((r) => r.cat === c).length }))
       .sort((x, y) => y.count - x.count),
     recipes,
   };
