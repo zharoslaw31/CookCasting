@@ -195,7 +195,7 @@ const styles = StyleSheet.create({
   genres: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 },
   genre: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
   genreText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  overview: { color: '#D8D8E4', fontSize: 14, lineHeight: 20, marginTop: 10 },
+  overview: { color: '#E8DFDA', fontSize: 14, lineHeight: 20, marginTop: 10 },
   more: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
   moreText: { color: colors.textDim, fontSize: 13, fontWeight: '700' },
   stamp: { position: 'absolute', top: 70, borderWidth: 4, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 6, backgroundColor: 'rgba(14,11,10,0.35)' },

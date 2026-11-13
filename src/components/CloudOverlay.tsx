@@ -74,12 +74,12 @@ export function CloudOverlay() {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(5,5,10,0.8)', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 100 },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(10,7,6,0.82)', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 100 },
   card: { width: '100%', maxWidth: 420, backgroundColor: colors.bgElevated, borderRadius: radius.xl, padding: 20, borderWidth: 1, borderColor: colors.border },
   title: { color: colors.text, fontSize: 20, fontWeight: '900', marginBottom: 6 },
   muted: { color: colors.textMuted, fontSize: 13, lineHeight: 19 },
   input: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14, paddingHorizontal: 12, height: 48, borderRadius: radius.md, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
   inputText: { flex: 1, color: colors.text, fontSize: 15, height: '100%' },
-  notice: { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 12, borderRadius: radius.pill, backgroundColor: 'rgba(30,30,46,0.98)', borderWidth: 1, borderColor: colors.border, zIndex: 100, maxWidth: '92%' },
+  notice: { position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 12, borderRadius: radius.pill, backgroundColor: 'rgba(43,33,28,0.98)', borderWidth: 1, borderColor: colors.border, zIndex: 100, maxWidth: '92%' },
   noticeText: { color: colors.text, fontWeight: '700', fontSize: 14, flexShrink: 1 },
 });

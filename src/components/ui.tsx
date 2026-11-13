@@ -217,7 +217,7 @@ export function Toast({ text, bottom }: { text: string; bottom: number }) {
 }
 
 const styles = StyleSheet.create({
-  toast: { position: 'absolute', alignSelf: 'center', paddingHorizontal: 16, paddingVertical: 10, borderRadius: radius.pill, backgroundColor: 'rgba(30,30,46,0.97)', borderWidth: 1, borderColor: colors.border, zIndex: 20, maxWidth: '90%' },
+  toast: { position: 'absolute', alignSelf: 'center', paddingHorizontal: 16, paddingVertical: 10, borderRadius: radius.pill, backgroundColor: 'rgba(43,33,28,0.98)', borderWidth: 1, borderColor: colors.border, zIndex: 20, maxWidth: '90%' },
   toastText: { color: colors.text, fontWeight: '700', fontSize: 14, textAlign: 'center' },
   center: { alignItems: 'center', justifyContent: 'center', padding: 8 },
   posterFallback: { color: colors.textMuted, fontSize: 12, marginTop: 6, textAlign: 'center' },

@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RecipeListItem } from '../components/RecipeParts';
@@ -8,6 +8,7 @@ import { Toast } from '../components/ui';
 import { goBack } from '../lib/nav';
 import { byPantry, ingredientImage, ingredientUk, plural, searchIngredients } from '../lib/recipes';
 import { useHaptics, useStore } from '../lib/store';
+import { DEFAULT_FILTERS } from '../lib/types';
 import { colors, radius } from '../theme';
 
 /** «Що є вдома»: обираєте продукти — бачите, що з них приготувати і чого бракує. */
@@ -19,8 +20,14 @@ export default function FridgeScreen() {
   const [q, setQ] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   const suggestions = useMemo(() => searchIngredients(q).filter((i) => !pantry.includes(i.key)).slice(0, q ? 40 : 30), [q, pantry]);
-  const results = useMemo(() => byPantry(pantry, state.filters.without.length ? { ...emptyFilters, without: state.filters.without } : undefined).slice(0, 60), [pantry, state.filters.without]);
+  const results = useMemo(() => byPantry(pantry, state.filters.without.length ? { ...DEFAULT_FILTERS, without: state.filters.without } : undefined).slice(0, 60), [pantry, state.filters.without]);
 
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flash = (t: string) => {
+    setToast(t);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2000);
+  };
   const setPantry = (p: string[]) => dispatch({ type: 'settings', settings: { pantry: p } });
   const toggle = (key: string) => {
     haptic('light');
@@ -78,8 +85,7 @@ export default function FridgeScreen() {
                     toggle(i.key);
                     if (q) {
                       setQ('');
-                      setToast(`Додано: ${i.uk}`);
-                      setTimeout(() => setToast(null), 1500);
+                      flash(`Додано: ${i.uk}`);
                     }
                   }}
                   style={[styles.pill, !q && { marginBottom: 0 }]}
@@ -100,8 +106,24 @@ export default function FridgeScreen() {
             r={item.r}
             sub={item.missing.length ? `Бракує: ${item.missing.map((m) => m.n.toLocaleLowerCase('uk')).join(', ')}` : '✅ Усе є!'}
             right={
-              <View style={[styles.badge, !item.missing.length && { backgroundColor: colors.like + '33', borderColor: colors.like }]}>
-                <Text style={[styles.badgeText, !item.missing.length && { color: colors.like }]}>{item.missing.length ? `−${item.missing.length}` : '✓'}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={[styles.badge, !item.missing.length && { backgroundColor: colors.like + '33', borderColor: colors.like }]}>
+                  <Text style={[styles.badgeText, !item.missing.length && { color: colors.like }]}>{item.missing.length ? `−${item.missing.length}` : '✓'}</Text>
+                </View>
+                {item.missing.length ? (
+                  <Pressable
+                    hitSlop={6}
+                    accessibilityLabel="Бракуюче — у список покупок"
+                    onPress={() => {
+                      dispatch({ type: 'shopAdd', items: item.missing.map((m) => ({ name: m.n, amount: m.m, recipeId: item.r.id })) });
+                      haptic('success');
+                      flash(`У покупки: ${item.missing.map((m) => m.n.toLocaleLowerCase('uk')).join(', ')}`);
+                    }}
+                    style={styles.cart}
+                  >
+                    <Ionicons name="cart-outline" size={18} color={colors.accent} />
+                  </Pressable>
+                ) : null}
               </View>
             }
           />
@@ -112,7 +134,6 @@ export default function FridgeScreen() {
   );
 }
 
-const emptyFilters = { areas: [], excludeAreas: [], cats: [], excludeCats: [], maxTime: null, maxIngr: null, without: [], withVideo: false, sortBy: 'random' as const };
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
@@ -130,5 +151,6 @@ const styles = StyleSheet.create({
   muted: { color: colors.textMuted, fontSize: 14 },
   count: { color: colors.textMuted, fontSize: 13, fontWeight: '700', marginTop: 18, marginBottom: 4 },
   badge: { minWidth: 40, height: 30, paddingHorizontal: 8, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.gold + '22', borderWidth: 1, borderColor: colors.gold + '88', marginLeft: 8 },
+  cart: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent + '1A', borderWidth: 1, borderColor: colors.accent + '55', marginLeft: 6 },
   badgeText: { color: colors.gold, fontWeight: '900', fontSize: 13 },
 });

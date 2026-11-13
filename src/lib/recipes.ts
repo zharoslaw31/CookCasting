@@ -96,6 +96,20 @@ export function plural(n: number, forms: [string, string, string]) {
   return forms[2];
 }
 
+/** Таймери з тексту кроку: «варіть 20–25 хвилин» → 25 хв, «запікайте 1 годину» → 60 хв. */
+export function stepTimers(text: string): number[] {
+  const out: number[] = [];
+  const re = /(\d+(?:[.,]\d+)?)(?:\s*(?:[-–—]|до)\s*(\d+(?:[.,]\d+)?))?\s*(хвилин\p{L}*|хв\.?|годин\p{L}*|год\.?|секунд\p{L}*|сек\.?)(?![\p{L}])/giu;
+  for (const m of text.matchAll(re)) {
+    const v = parseFloat((m[2] ?? m[1]).replace(',', '.'));
+    if (!v) continue;
+    const unit = m[3].toLowerCase();
+    const min = unit.startsWith('год') ? v * 60 : unit.startsWith('сек') ? v / 60 : v;
+    if (min >= 1 && min <= 12 * 60 && !out.includes(min)) out.push(Math.round(min));
+  }
+  return out.slice(0, 3);
+}
+
 /* ───────── фільтри ───────── */
 
 export function matches(r: Recipe, f: Filters): boolean {
@@ -143,7 +157,7 @@ export function buildTaste(liked: number[], cooked: { id: number; myRating?: num
   const cats = new Map<string, number>();
   const ingr = new Map<string, number>();
   const add = (id: number, w: number) => {
-    const r = BY_ID.get(id);
+    const r = getRecipe(id);
     if (!r) return;
     areas.set(r.area, (areas.get(r.area) ?? 0) + w);
     cats.set(r.cat, (cats.get(r.cat) ?? 0) + w);
@@ -229,12 +243,19 @@ export function searchIngredients(q: string): IngredientInfo[] {
   return ALL_INGREDIENTS.filter((i) => norm(i.uk).includes(w) || i.key.includes(w)).slice(0, 60);
 }
 
+/** Чи є продукт (англ. назва інгредієнта) серед того, що вдома. «chicken» покриває «chicken breast» тощо. */
+export function pantryCovers(pantry: string[]) {
+  const have = new Set(pantry.map((p) => p.toLowerCase()));
+  return (en: string) => {
+    const k = en.toLowerCase();
+    return have.has(k) || [...have].some((h) => h.length >= 4 && k.includes(h));
+  };
+}
+
 /** Рецепти за наявними продуктами: скільки збігів і чого бракує. */
 export function byPantry(pantry: string[], f?: Filters) {
-  const have = new Set(pantry.map((p) => p.toLowerCase()));
-  if (!have.size) return [];
-  // «chicken» вдома покриває «chicken breast», «chicken thighs» тощо
-  const covers = (k: string) => have.has(k) || [...have].some((h) => k.includes(h) && h.length >= 4);
+  if (!pantry.length) return [];
+  const covers = pantryCovers(pantry);
   return allRecipes().filter((r) => !f || matches(r, f))
     .map((r) => {
       const needed = r.ingr.filter((i) => !BASIC.has(i.en.toLowerCase()));

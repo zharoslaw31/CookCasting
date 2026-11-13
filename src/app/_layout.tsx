@@ -8,6 +8,7 @@ import { CloudOverlay } from '../components/CloudOverlay';
 import { startAutoUpdate } from '../lib/autoUpdate';
 import { CloudProvider } from '../lib/cloud';
 import { StoreProvider } from '../lib/store';
+import { TimerProvider } from '../lib/timer';
 import { colors } from '../theme';
 
 startAutoUpdate();
@@ -27,6 +28,7 @@ export default function RootLayout() {
       <StoreProvider>
         <CloudProvider>
         <ThemeProvider value={theme}>
+        <TimerProvider>
           <StatusBar style="light" />
           <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
             <Stack.Screen name="(tabs)" />
@@ -38,6 +40,7 @@ export default function RootLayout() {
             <Stack.Screen name="obsidian" />
           </Stack>
           <CloudOverlay />
+        </TimerProvider>
         </ThemeProvider>
         </CloudProvider>
       </StoreProvider>

@@ -107,7 +107,7 @@ export default function LibraryScreen() {
             { value: 'liked', label: width < 400 ? 'Обране' : '❤️ Обране', count: state.liked.length },
             { value: 'cooked', label: width < 400 ? 'Готував' : '🍳 Готував', count: state.cooked.length },
             { value: 'shop', label: width < 400 ? 'Покупки' : '🛒 Покупки', count: shopLeft || undefined },
-            { value: 'disliked', label: '✕', count: state.disliked.length },
+            { value: 'disliked', label: '✕ Ні', count: state.disliked.length },
           ]}
         />
         {tab !== 'shop' ? (
