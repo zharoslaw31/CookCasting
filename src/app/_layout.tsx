@@ -35,6 +35,7 @@ export default function RootLayout() {
             <Stack.Screen name="search" />
             <Stack.Screen name="tonight" />
             <Stack.Screen name="fridge" />
+            <Stack.Screen name="obsidian" />
           </Stack>
           <CloudOverlay />
         </ThemeProvider>

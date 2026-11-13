@@ -80,6 +80,18 @@ export type ShopItem = { key: string; name: string; amount: string; recipeId: nu
 
 export type Profile = { name: string; avatar: string; createdAt: number };
 
+export type ObsidianMethod = 'github' | 'uri' | 'file';
+export type ObsidianOpts = {
+  method: ObsidianMethod;
+  vault: string;
+  folder: string;
+  repo: string;
+  branch: string;
+  /** ключ GitHub — лише на цьому пристрої, у хмару не йде */
+  token: string;
+  verified?: boolean;
+};
+
 export type Settings = {
   haptics: boolean;
   onboarded?: boolean;
@@ -90,4 +102,6 @@ export type Settings = {
   spoonKey?: string;
   /** показувати рецепти світової бази в Кастингу */
   world?: boolean;
+  /** збереження в базу Obsidian */
+  obsidian?: Partial<ObsidianOpts>;
 };

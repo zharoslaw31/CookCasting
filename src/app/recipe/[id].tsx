@@ -12,6 +12,9 @@ import { goBack } from '../../lib/nav';
 import { areaLabel, areaOf, catOf, DIFFICULTY_LABEL, difficulty, FLAGS, formatTime, getRecipe, ingredientImage, isWorld, plural, similar } from '../../lib/recipes';
 import { loadWorldRecipe } from '../../lib/spoon';
 import { shareRecipe, shareRecipeText } from '../../lib/share';
+import { ObsidianSheet } from '../../components/ObsidianSheet';
+import { obsidianOf, saveToObsidian } from '../../lib/obsidian';
+import { buildRecipeNote, CookStage } from '../../lib/recipeNote';
 import { useHaptics, useStore } from '../../lib/store';
 import { colors, gradients, radius } from '../../theme';
 
@@ -23,11 +26,12 @@ export default function RecipeScreen() {
   const r = getRecipe(id);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { isLiked, isCooked, isDisliked, ratingOf, dispatch, worldKey } = useStore();
+  const { state, isLiked, isCooked, isDisliked, ratingOf, dispatch, worldKey } = useStore();
   const haptic = useHaptics();
   const [playing, setPlaying] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [solidHeader, setSolidHeader] = useState(false);
+  const [saveOpen, setSaveOpen] = useState(false);
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [doneSteps, setDoneSteps] = useState<Set<number>>(new Set());
   const [cookMode, setCookMode] = useState<number | null>(null);
@@ -282,12 +286,42 @@ export default function RecipeScreen() {
         <Ionicons name="chevron-down" size={24} color="#fff" />
       </Pressable>
       <View style={[styles.topRight, { top: insets.top + 8 }]}>
+        <Pressable onPress={() => setSaveOpen(true)} style={styles.circle} hitSlop={8} accessibilityLabel="Зберегти в Obsidian">
+          <Ionicons name="diamond-outline" size={19} color="#fff" />
+        </Pressable>
         <Pressable onPress={share} style={styles.circle} hitSlop={8} accessibilityLabel="Поділитись">
           <Ionicons name="share-outline" size={20} color="#fff" />
         </Pressable>
       </View>
 
       {toast ? <Toast text={toast} bottom={Math.max(insets.bottom, 14) + 84} /> : null}
+
+      <ObsidianSheet<CookStage>
+        visible={saveOpen}
+        onClose={() => setSaveOpen(false)}
+        heading={r.name}
+        stages={[
+          { value: 'want', label: 'Хочу приготувати' },
+          { value: 'today', label: 'Приготував сьогодні' },
+          { value: 'done', label: 'Уже готував' },
+        ]}
+        initial={{ stage: cooked ? 'done' : 'want', rating: myRating ?? null, notes: '' }}
+        ratingMax={5}
+        notesLabel="Мої зміни і поради"
+        notesPlaceholder="Що змінив, що вийшло, що зробити інакше (кожен рядок — окремий пункт)"
+        onSave={async (v) => {
+          const at = state.cooked.find((e) => e.id === id)?.at;
+          const res = await saveToObsidian(obsidianOf(state.settings.obsidian), buildRecipeNote(r, { stage: v.stage, rating: v.rating, notes: v.notes, cookedAt: at }));
+          if (res.ok) {
+            // застосунок і база кажуть одне й те саме
+            if (v.stage !== 'want' && !cooked) dispatch({ type: 'toggle', id, list: 'cooked' });
+            if (v.stage === 'want' && !liked && !cooked) dispatch({ type: 'toggle', id, list: 'liked' });
+            if (v.rating && v.rating !== myRating) dispatch({ type: 'rate', id, rating: v.rating });
+            haptic('success');
+          } else haptic('warning');
+          return res;
+        }}
+      />
 
       <View style={[styles.bar, { paddingBottom: Math.max(insets.bottom, 14) }]}>
         <Pressable

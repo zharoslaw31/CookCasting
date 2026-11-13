@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AccountCard } from '../../components/AccountCard';
+import { ObsidianLink } from '../../components/ObsidianSheet';
 import { SectionTitle } from '../../components/ui';
 import { AREAS, areaOf, catOf, DB, EXTRA, getRecipe, RECIPES } from '../../lib/recipes';
 import { ENV_SPOON_KEY, validateSpoonKey } from '../../lib/spoon';
@@ -153,6 +154,7 @@ export default function ProfileScreen() {
 
       {/* Статистика */}
       <AccountCard />
+      <ObsidianLink />
 
       <SectionTitle>Статистика</SectionTitle>
       <View style={styles.grid}>
