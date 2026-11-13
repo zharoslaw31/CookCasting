@@ -360,7 +360,7 @@ const styles = StyleSheet.create({
   swipeHintText: { color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: '700' },
   title: { color: '#fff', fontSize: 24, fontWeight: '900', letterSpacing: -0.3 },
   metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: 6 },
-  meta: { color: '#E5E5EF', fontSize: 13, fontWeight: '700' },
+  meta: { color: '#EFE7E2', fontSize: 13, fontWeight: '700' },
   dot: { color: 'rgba(255,255,255,0.5)', marginHorizontal: 6 },
   overview: { color: 'rgba(255,255,255,0.88)', fontSize: 15, lineHeight: LINE, marginTop: 10 },
 });

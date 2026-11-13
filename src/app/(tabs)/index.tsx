@@ -5,7 +5,7 @@ import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, u
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SwipeDeck, SwipeDeckHandle } from '../../components/SwipeDeck';
-import { GradientButton, RoundButton } from '../../components/ui';
+import { GradientButton, RoundButton, Stars } from '../../components/ui';
 import { openRecipe } from '../../lib/nav';
 import { buildTaste, isWorld, matches, plural, RECIPES, sortRecipes, tasteScore } from '../../lib/recipes';
 import { countActiveFilters, useHaptics, useStore } from '../../lib/store';
@@ -104,19 +104,33 @@ export default function CastingScreen() {
   }, [filtersKey, state.ready]);
 
   const lastSwiped = useRef<Recipe[]>([]);
+  // «Вже готував» — одразу пропонуємо оцінити, як вийшло
+  const [rateFor, setRateFor] = useState<Recipe | null>(null);
+  const rateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const askRating = useCallback((r: Recipe | null) => {
+    if (rateTimer.current) clearTimeout(rateTimer.current);
+    setRateFor(r);
+    if (r) rateTimer.current = setTimeout(() => setRateFor(null), 7000);
+  }, []);
+  useEffect(() => () => {
+    if (rateTimer.current) clearTimeout(rateTimer.current);
+  }, []);
+
   const handleSwipe = useCallback(
     (r: Recipe, kind: SwipeKind) => {
       lastSwiped.current = [r, ...lastSwiped.current].slice(0, 30);
       swipe(r.id, kind);
       haptic(kind === 'like' ? 'success' : 'light');
       setQueue((q) => q.filter((x) => x.id !== r.id));
+      askRating(kind === 'cooked' ? r : null);
     },
-    [swipe, haptic],
+    [swipe, haptic, askRating],
   );
 
   const undo = () => {
     const r = lastSwiped.current.shift();
     if (!r) return;
+    askRating(null);
     dispatch({ type: 'undo' });
     haptic('warning');
     setQueue((q) => [r, ...q.filter((x) => x.id !== r.id)]);
@@ -155,7 +169,7 @@ export default function CastingScreen() {
             Cook<Text style={{ color: colors.accent }}>Casting</Text>
           </Text>
           <Text style={styles.sub} numberOfLines={1}>
-            {!state.ready ? ' ' : worldOn ? (worldError ? 'Світова база: ліміт на сьогодні' : '∞ Світова база + вбудовані рецепти') : `${left} ${plural(left, ['рецепт', 'рецепти', 'рецептів'])} у колоді`}
+            {!state.ready ? ' ' : worldOn ? (worldError ? (/ліміт/i.test(worldError) ? 'Світова база: ліміт на сьогодні' : 'Світова база недоступна') : '∞ Світова база + вбудовані рецепти') : `${left} ${plural(left, ['рецепт', 'рецепти', 'рецептів'])} у колоді`}
           </Text>
         </View>
         <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -240,6 +254,23 @@ export default function CastingScreen() {
         </Pressable>
       ) : null}
 
+      {rateFor ? (
+        <View style={[styles.rate, { bottom: bottomPad + 92 }]}>
+          <Text style={styles.rateText} numberOfLines={1}>
+            Як вийшло «{rateFor.name}»?
+          </Text>
+          <Stars
+            size={24}
+            value={0}
+            onChange={(v) => {
+              dispatch({ type: 'rate', id: rateFor.id, rating: v });
+              haptic('success');
+              askRating(null);
+            }}
+          />
+        </View>
+      ) : null}
+
       <View style={[styles.actions, { paddingBottom: bottomPad }]}>
         <RoundButton icon="arrow-undo" size={48} color={colors.gold} onPress={undo} disabled={!lastSwiped.current.length} />
         <RoundButton icon="close" size={66} color={colors.nope} onPress={() => deck.current?.swipe('nope')} disabled={!queue.length} iconSize={34} />
@@ -287,7 +318,7 @@ const styles = StyleSheet.create({
   modeIcon: { fontSize: 15 },
   modeText: { color: colors.textDim, fontSize: 14, fontWeight: '800' },
   forYouHint: { color: colors.textMuted, fontSize: 12, lineHeight: 17, paddingHorizontal: 20, marginTop: 8 },
-  tipWrap: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(5,5,10,0.72)', alignItems: 'center', justifyContent: 'center', padding: 22, zIndex: 30 },
+  tipWrap: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(10,7,6,0.74)', alignItems: 'center', justifyContent: 'center', padding: 22, zIndex: 30 },
   tip: { width: '100%', maxWidth: 420, backgroundColor: colors.bgElevated, borderRadius: radius.xl, padding: 20, borderWidth: 1, borderColor: colors.border },
   tipTitle: { color: colors.text, fontSize: 20, fontWeight: '900', marginBottom: 12 },
   tipRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10 },
@@ -320,6 +351,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   filterBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  rate: { position: 'absolute', left: 24, right: 24, zIndex: 20, flexDirection: 'column', alignItems: 'center', gap: 6, paddingVertical: 12, paddingHorizontal: 16, borderRadius: radius.lg, backgroundColor: 'rgba(43,33,28,0.98)', borderWidth: 1, borderColor: colors.cooked + '88' },
+  rateText: { color: colors.text, fontSize: 14, fontWeight: '800' },
   actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 18, paddingTop: 16 },
   empty: {
     flex: 1,

@@ -3,13 +3,15 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Linking, Pressable, ScrollView, ScrollViewInstance, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Linking, Platform, Pressable, ScrollView, ScrollViewInstance, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Fact, Heading, RecipeRow } from '../../components/RecipeParts';
 import { TrailerPlayer } from '../../components/TrailerPlayer';
 import { GhostButton, GradientButton, Stars, Toast } from '../../components/ui';
 import { goBack } from '../../lib/nav';
-import { areaLabel, areaOf, catOf, DIFFICULTY_LABEL, difficulty, FLAGS, formatTime, getRecipe, ingredientImage, isWorld, plural, similar } from '../../lib/recipes';
+import { areaLabel, areaOf, catOf, DIFFICULTY_LABEL, difficulty, FLAGS, formatTime, getRecipe, ingredientImage, isWorld, pantryCovers, plural, similar, stepTimers } from '../../lib/recipes';
+import { useKeepAwake } from '../../lib/keepAwake';
+import { TimerList, useTimers } from '../../lib/timer';
 import { loadWorldRecipe } from '../../lib/spoon';
 import { shareRecipe, shareRecipeText } from '../../lib/share';
 import { ObsidianSheet } from '../../components/ObsidianSheet';
@@ -35,16 +37,49 @@ export default function RecipeScreen() {
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [doneSteps, setDoneSteps] = useState<Set<number>>(new Set());
   const [cookMode, setCookMode] = useState<number | null>(null);
+  const [showIngr, setShowIngr] = useState(false);
   const scroll = useRef<ScrollViewInstance>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sim = useMemo(() => (r ? similar(r, 12) : []), [r]);
+  const { start: startTimer, setInline: setTimersInline, timers } = useTimers();
+  useKeepAwake(cookMode !== null);
+  useEffect(() => {
+    setTimersInline(cookMode !== null);
+    return () => setTimersInline(false);
+  }, [cookMode !== null, setTimersInline]);
 
+  // що вже є вдома («Що є вдома») — одразу позначено
   useEffect(() => {
     setPlaying(false);
-    setChecked(new Set());
+    const covers = pantryCovers(state.settings.pantry ?? []);
+    setChecked(new Set(r && state.settings.pantry?.length ? r.ingr.map((i, k) => (covers(i.en) ? k : -1)).filter((k) => k >= 0) : []));
     setDoneSteps(new Set());
     setCookMode(null);
+    setShowIngr(false);
     scroll.current?.scrollTo({ y: 0, animated: false });
-  }, [id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, !!r]);
+  useEffect(() => () => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+  }, []);
+
+  // клавіатура в режимі готування: ← → кроки, Esc — вийти
+  const cookRef = useRef({ cookMode, steps: r?.steps.length ?? 0 });
+  cookRef.current = { cookMode, steps: r?.steps.length ?? 0 };
+  useEffect(() => {
+    if (Platform.OS !== 'web' || cookMode === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      const { cookMode: c, steps } = cookRef.current;
+      if (c === null) return;
+      if (e.key === 'ArrowRight' && c < steps - 1) setCookMode(c + 1);
+      else if (e.key === 'ArrowLeft' && c > 0) setCookMode(c - 1);
+      else if (e.key === 'Escape') setCookMode(null);
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [cookMode === null]);
 
   // рецепт світової бази, якого ще немає на пристрої (напр., відкрили посилання) — завантажуємо й перекладаємо
   const needsLoad = !r && isWorld(id) && !!worldKey;
@@ -62,7 +97,8 @@ export default function RecipeScreen() {
 
   const flash = (t: string) => {
     setToast(t);
-    setTimeout(() => setToast(null), 2200);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2400);
   };
 
   if (!r) {
@@ -95,18 +131,22 @@ export default function RecipeScreen() {
   const addToShopping = () => {
     // якщо щось уже відмічено як «є вдома» — додаємо лише решту
     const items = r.ingr.filter((_, i) => !checked.has(i)).map((i) => ({ name: i.n, amount: i.m, recipeId: r.id }));
+    if (!items.length) return flash('Усе вже є вдома 👌');
+    const before = state.shopping.filter((x) => !x.done && x.recipeId === r.id).length;
     dispatch({ type: 'shopAdd', items });
     haptic('success');
-    flash(`Додано до списку покупок: ${items.length}`);
+    flash(before ? 'Список покупок оновлено' : `Додано до списку покупок: ${items.length}`);
   };
 
   const share = async () => {
     const res = await shareRecipe(r);
     if (res === 'copied') flash('Посилання скопійовано');
+    else if (res === 'failed') flash('Не вдалося поділитись');
   };
   const shareFull = async () => {
     const res = await shareRecipeText(r);
     if (res === 'copied') flash('Рецепт скопійовано');
+    else if (res === 'failed') flash('Не вдалося поділитись');
   };
 
   return (
@@ -229,7 +269,14 @@ export default function RecipeScreen() {
                 <View style={[styles.stepNum, on && { backgroundColor: colors.like }]}>
                   {on ? <Ionicons name="checkmark" size={16} color="#fff" /> : <Text style={styles.stepNumText}>{i + 1}</Text>}
                 </View>
-                <Text style={styles.stepText}>{s}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.stepText}>{s}</Text>
+                  <TimerChips text={s} label={`${r.name} · крок ${i + 1}`} onStart={(m, l) => {
+                    startTimer(m, l);
+                    haptic('light');
+                    flash(`Таймер на ${formatTime(m)} запущено`);
+                  }} />
+                </View>
               </Pressable>
             );
           })}
@@ -249,7 +296,7 @@ export default function RecipeScreen() {
           ) : null}
 
           <Text style={styles.note}>
-            Рецепт перекладено українською автоматично з бази TheMealDB. Час приготування орієнтовний.
+            Рецепт перекладено українською автоматично з {isWorld(r.id) ? 'світової бази Spoonacular' : 'бази TheMealDB'}. Час приготування орієнтовний.
           </Text>
           <View style={styles.links}>
             <Pressable onPress={shareFull} style={styles.smallBtn}>
@@ -372,13 +419,35 @@ export default function RecipeScreen() {
           <View style={styles.progress}>
             <View style={[styles.progressFill, { width: `${((cookMode + 1) / r.steps.length) * 100}%` }]} />
           </View>
+          {timers.length ? (
+            <View style={{ marginTop: 12, gap: 6, alignItems: 'flex-start' }}>
+              <TimerList />
+            </View>
+          ) : null}
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingVertical: 24 }}>
             <Text style={styles.cookText}>{r.steps[cookMode]}</Text>
+            <TimerChips big text={r.steps[cookMode]} label={`${r.name} · крок ${cookMode + 1}`} onStart={(m, l) => {
+              startTimer(m, l);
+              haptic('light');
+            }} />
             {cookMode === 0 ? (
               <Text style={styles.cookHint}>
-                Знадобиться: {r.ingr.length} {plural(r.ingr.length, ['інгредієнт', 'інгредієнти', 'інгредієнтів'])}. Екран можна гортати кнопками внизу.
+                Знадобиться: {r.ingr.length} {plural(r.ingr.length, ['інгредієнт', 'інгредієнти', 'інгредієнтів'])}. Екран не згасатиме, поки відкрито режим готування.
               </Text>
             ) : null}
+            <Pressable onPress={() => setShowIngr((v) => !v)} style={[styles.smallBtn, { alignSelf: 'flex-start', marginTop: 22 }]}>
+              <Ionicons name={showIngr ? 'chevron-up' : 'list-outline'} size={16} color={colors.accent} />
+              <Text style={styles.smallBtnText}>{showIngr ? 'Сховати інгредієнти' : 'Інгредієнти'}</Text>
+            </Pressable>
+            {showIngr
+              ? r.ingr.map((ing, i) => (
+                  <Pressable key={i} onPress={() => setChecked((s2) => toggleSet(s2, i))} style={styles.ingRow}>
+                    <Ionicons name={checked.has(i) ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={checked.has(i) ? colors.like : colors.textMuted} />
+                    <Text style={[styles.ingName, checked.has(i) && styles.struck]}>{ing.n}</Text>
+                    <Text style={[styles.ingAmount, checked.has(i) && styles.struck]}>{ing.m}</Text>
+                  </Pressable>
+                ))
+              : null}
           </ScrollView>
           <View style={styles.cookBar}>
             <GhostButton title="Назад" icon="chevron-back" onPress={() => setCookMode(Math.max(0, cookMode - 1))} style={{ flex: 1, opacity: cookMode === 0 ? 0.4 : 1 }} />
@@ -416,7 +485,27 @@ export default function RecipeScreen() {
   );
 }
 
+/** Кнопки таймера для часу, згаданого в кроці: «⏱ 20 хв». */
+function TimerChips({ text, label, onStart, big }: { text: string; label: string; onStart: (minutes: number, label: string) => void; big?: boolean }) {
+  const mins = stepTimers(text);
+  if (!mins.length) return null;
+  return (
+    <View style={[styles.timers, big && { marginTop: 18 }]}>
+      {mins.map((m) => (
+        <Pressable key={m} onPress={() => onStart(m, label)} hitSlop={4} style={[styles.timerChip, big && styles.timerChipBig]} accessibilityLabel={`Таймер на ${formatTime(m)}`}>
+          <Ionicons name="timer-outline" size={big ? 18 : 14} color={colors.accent2} />
+          <Text style={[styles.timerText, big && { fontSize: 16 }]}>{formatTime(m)}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  timers: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  timerChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, height: 30, borderRadius: 15, backgroundColor: colors.accent2 + '1A', borderWidth: 1, borderColor: colors.accent2 + '55' },
+  timerChipBig: { height: 42, borderRadius: 21, paddingHorizontal: 16 },
+  timerText: { color: colors.accent2, fontWeight: '800', fontSize: 13 },
   screen: { flex: 1, backgroundColor: colors.bg },
   center: { alignItems: 'center', justifyContent: 'center' },
   emptyEmoji: { fontSize: 44, marginBottom: 8 },

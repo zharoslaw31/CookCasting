@@ -472,11 +472,19 @@ async function main() {
 function estimateMinutes(r) {
   const text = r.steps.join(' ');
   let total = 0;
+  // «…30 minutes or overnight», «…or up to 24 hours» — це альтернатива, а не додатковий час
+  const isAlternative = (i) => /\bor\s+(?:up to\s+|until\s+|even\s+|for\s+)?$/i.test(text.slice(Math.max(0, i - 16), i));
   for (const m of text.matchAll(/(\d+(?:[.,]\d+)?)(?:\s*(?:-|–|to)\s*(\d+(?:[.,]\d+)?))?\s*(minutes?|mins?|hours?|hrs?)\b/gi)) {
+    if (isAlternative(m.index)) continue;
     const v = parseFloat((m[2] ?? m[1]).replace(',', '.'));
     total += /^h/i.test(m[3]) ? v * 60 : v;
   }
-  if (/overnight/i.test(text)) total += 8 * 60;
+  for (const m of text.matchAll(/overnight/gi)) {
+    if (!isAlternative(m.index)) {
+      total += 8 * 60;
+      break;
+    }
+  }
   const prep = 5 + r.ingr.length * 1.5;
   const est = Math.max(total, 0) + prep;
   const round = est < 60 ? Math.ceil(est / 5) * 5 : Math.ceil(est / 15) * 15;

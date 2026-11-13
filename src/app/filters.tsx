@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Chip, GhostButton, GradientButton, SectionTitle } from '../components/ui';
 import { goBack } from '../lib/nav';
@@ -33,6 +33,7 @@ const SORTS: { value: SortBy; label: string; icon: string }[] = [
 
 export default function FiltersScreen() {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const { state, dispatch, worldKey } = useStore();
   const world = !!worldKey && state.settings.world !== false;
   const [f, setF] = useState<Filters>(state.filters);
@@ -149,7 +150,7 @@ export default function FiltersScreen() {
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         <GhostButton title="Скасувати" onPress={() => goBack()} style={{ flex: 1 }} />
         <GradientButton
-          title={count ? `Показати ${count}${world ? '+' : ''} ${plural(count, ['рецепт', 'рецепти', 'рецептів'])}` : world ? 'Шукати у світовій базі' : 'Нічого не знайдено'}
+          title={count ? `Показати ${count}${world ? '+' : ''}${width < 430 ? '' : ` ${plural(count, ['рецепт', 'рецепти', 'рецептів'])}`}` : world ? 'Шукати у світі' : 'Нічого не знайдено'}
           icon="sparkles"
           onPress={count || world ? apply : undefined}
           style={{ flex: 2, opacity: count || world ? 1 : 0.5 }}
