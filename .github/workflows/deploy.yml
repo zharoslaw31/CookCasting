@@ -35,6 +35,8 @@ jobs:
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY }}
         run: |
           SB_URL="$(printf '%s' "$SB_URL" | tr -d '[:space:]')"
+          # адреса проєкту Supabase (публічна, та сама, що в MovieCasting)
+          [ -z "$SB_URL" ] && SB_URL="https://xiniojnshtldindforye.supabase.co"
           if [ -z "$SB_URL" ] && [ -n "$EXPO_PUBLIC_SUPABASE_ANON_KEY" ]; then
             # адресу проєкту можна взяти з самого anon-ключа (поле ref у JWT)
             REF="$(node -e 'const p=(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY.split(".")[1]||"");try{process.stdout.write(JSON.parse(Buffer.from(p,"base64url").toString()).ref||"")}catch{}')"
